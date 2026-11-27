@@ -1,0 +1,109 @@
+.hours-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface-subtle);
+}
+
+.hours-editor__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.hours-editor__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.hours-editor__subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.hours-editor__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hours-editor__row {
+  display: grid;
+  grid-template-columns: 120px 100px 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.hours-editor__day {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.hours-editor__closed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.hours-editor__times {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.hours-editor__time-input {
+  height: 34px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+}
+
+.hours-editor__time-input:disabled {
+  background-color: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.hours-editor__sep {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.hours-editor__closed-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.hours-editor__row-error {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .hours-editor__row {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+}
+

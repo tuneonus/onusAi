@@ -1,0 +1,40 @@
+.workspace-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background-color: transparent;
+}
+
+.workspace-switcher__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.workspace-switcher__label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.workspace-switcher__new-link {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.workspace-switcher__new-link:hover {
+  text-decoration: underline;
+}
+
+.workspace-switcher__empty {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+

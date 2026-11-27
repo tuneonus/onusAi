@@ -1,0 +1,32 @@
+.business-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.business-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.business-form__full {
+  grid-column: 1 / -1;
+}
+
+.business-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+@media (max-width: 720px) {
+  .business-form__grid {
+    grid-template-columns: 1fr;
+  }
+}
+

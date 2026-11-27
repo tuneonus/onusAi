@@ -1,122 +1,139 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { DASHBOARD_NAV_ITEMS, ROUTES } from './config/routes';
+import { AuthProvider } from './features/auth/AuthProvider';
+import { ProtectedRoute } from './features/auth/components/ProtectedRoute';
+import { TenantProvider } from './features/businesses/TenantProvider';
+import { useSystemStatus } from './hooks/useSystemStatus';
+import { useTheme } from './hooks/useTheme';
+import { AppShell } from './layouts/AppShell';
+import { BusinessProfilePage } from './pages/BusinessProfilePage';
+import { DashboardHomePage } from './pages/DashboardHomePage';
+import { DiagnosticsPage } from './pages/DiagnosticsPage';
+import { LocationsPage } from './pages/LocationsPage';
+import { LoginPage } from './pages/LoginPage';
+import { ModulePlaceholderPage } from './pages/ModulePlaceholderPage';
 
-function App() {
-  const [count, setCount] = useState(0)
+function DashboardRoutes() {
+  const { pathname } = useLocation();
+  const { preference, setPreference } = useTheme();
+  const system = useSystemStatus();
+
+  const currentNav = DASHBOARD_NAV_ITEMS.find((item) => item.path === pathname);
+  const pageTitle =
+    pathname === ROUTES.login
+      ? 'Sign in'
+      : currentNav
+        ? currentNav.label
+        : 'Overview';
+
+  useEffect(() => {
+    document.title = `${pageTitle} · ${system.branding.productName}`;
+  }, [pageTitle, system.branding.productName]);
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <Routes>
+      <Route
+        path={ROUTES.login}
+        element={
+          <LoginPage
+            branding={system.branding}
+            themePreference={preference}
+            onSelectTheme={setPreference}
+          />
+        }
+      />
 
-      <div className="ticks"></div>
+      <Route element={<ProtectedRoute />}>
+        <Route
+          path={ROUTES.overview}
+          element={
+            <AppShell
+              branding={system.branding}
+              themePreference={preference}
+              onSelectTheme={setPreference}
+              pageTitle={pageTitle}
+            >
+              <DashboardHomePage />
+            </AppShell>
+          }
+        />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        <Route
+          path={ROUTES.businesses}
+          element={
+            <AppShell
+              branding={system.branding}
+              themePreference={preference}
+              onSelectTheme={setPreference}
+              pageTitle="Business Profile"
+            >
+              <BusinessProfilePage />
+            </AppShell>
+          }
+        />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        <Route
+          path={ROUTES.locations}
+          element={
+            <AppShell
+              branding={system.branding}
+              themePreference={preference}
+              onSelectTheme={setPreference}
+              pageTitle="Locations"
+            >
+              <LocationsPage />
+            </AppShell>
+          }
+        />
+
+        <Route
+          path={ROUTES.diagnostics}
+          element={
+            <AppShell
+              branding={system.branding}
+              themePreference={preference}
+              onSelectTheme={setPreference}
+              pageTitle="System Diagnostics"
+            >
+              <DiagnosticsPage system={system} onRefreshStatus={system.refresh} />
+            </AppShell>
+          }
+        />
+
+        {DASHBOARD_NAV_ITEMS.filter((item) => !item.implemented).map((item) => (
+          <Route
+            key={item.path}
+            path={item.path}
+            element={
+              <AppShell
+                branding={system.branding}
+                themePreference={preference}
+                onSelectTheme={setPreference}
+                pageTitle={item.label}
+              >
+                <ModulePlaceholderPage module={item} />
+              </AppShell>
+            }
+          />
+        ))}
+      </Route>
+
+      <Route path="*" element={<Navigate to={ROUTES.overview} replace />} />
+    </Routes>
+  );
 }
 
-export default App
+export function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <TenantProvider>
+          <DashboardRoutes />
+        </TenantProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+export default App;

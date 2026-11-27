@@ -1,75 +1,29 @@
-# React + TypeScript + Vite
+# OnusAI Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite staff dashboard for the OnusAI AI Business Engagement Platform.
 
-Currently, two official plugins are available:
+See [FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md) for the folder structure, layer responsibilities, coding conventions, and step-by-step implementation plan.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Prerequisites
 
-## React Compiler
+- Node.js and npm installed (dependencies are already present in `dashboard/package.json`).
+- Running `backend/` API server (defaults to `http://127.0.0.1:3000`) for live API integration.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Environment Configuration
 
-## Expanding the ESLint configuration
+Copy `.env.example` to `.env.local` if you need non-default API origins:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- `VITE_API_BASE_URL` — Leave empty in local development to use the Vite `/api` proxy (same-origin cookie & CSRF flow), or set to an explicit backend origin (e.g., `https://api.example.com`).
+- `VITE_DEV_API_PROXY_TARGET` — Backend origin used by the Vite dev server proxy (defaults to `http://127.0.0.1:3000`).
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Scripts
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Run from `dashboard/`:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
-
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm run dev      # Start Vite development server (default http://localhost:5173)
+npm run lint     # Run ESLint across TypeScript/React files
+npm test         # Run Node native unit tests in tests/
+npm run build    # Run strict TypeScript project check (tsc -b) and Vite production build
+npm run preview  # Preview the built production bundle locally
 ```

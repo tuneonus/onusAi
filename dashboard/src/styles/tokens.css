@@ -1,0 +1,172 @@
+/* OnusAI Design System Tokens
+ * Palette inspired by clean AI SaaS aesthetics:
+ *   Dark canvas: #050816 | Dark sidebar: #0A0F20 | Dark surface: #101729
+ *   Light canvas: #F8FAFC | Light surface: #FFFFFF
+ *   Primary: #2563EB | Secondary: #06B6D4 | Accent: #8B5CF6
+ *   Brand gradient: Electric Blue -> Cyan -> Violet
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+
+  --text-xs: 0.75rem;      /* 12px */
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 0.9375rem;  /* 15px */
+  --text-lg: 1.0625rem;    /* 17px */
+  --text-xl: 1.25rem;      /* 20px */
+  --text-2xl: 1.5rem;      /* 24px */
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+
+  /* Layout dimensions */
+  --sidebar-width: 260px;
+  --topbar-height: 64px;
+  --content-max-width: 1200px;
+
+  /* Brand & Gradient */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-subtle: rgba(37, 99, 235, 0.08);
+  --color-primary-border: rgba(37, 99, 235, 0.28);
+  --color-on-primary: #FFFFFF;
+
+  --color-secondary: #06B6D4;
+  --color-accent: #8B5CF6;
+
+  --brand-gradient: linear-gradient(135deg, #2563EB 0%, #06B6D4 52%, #8B5CF6 100%);
+  --brand-gradient-subtle: linear-gradient(
+    135deg,
+    rgba(37, 99, 235, 0.08) 0%,
+    rgba(6, 182, 212, 0.08) 52%,
+    rgba(139, 92, 246, 0.08) 100%
+  );
+  --brand-glow: radial-gradient(
+    ellipse 60% 50% at 50% 0%,
+    rgba(37, 99, 235, 0.14) 0%,
+    rgba(6, 182, 212, 0.08) 45%,
+    transparent 75%
+  );
+
+  /* Surfaces & Neutrals (Light) */
+  --color-bg: #F8FAFC;
+  --color-sidebar: #FFFFFF;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #F1F5F9;
+  --color-surface-hover: #E2E8F0;
+  --color-border: #E2E8F0;
+  --color-border-strong: #CBD5E1;
+
+  /* Text (Light) */
+  --color-text: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748B;
+
+  /* Semantic Status (Light) */
+  --color-success: #15803D;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+
+  --color-warning: #B45309;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+
+  --color-danger: #B91C1C;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+
+  --color-info: #0369A1;
+  --color-info-bg: #F0F9FF;
+  --color-info-border: #BAE6FD;
+
+  /* Elevation (Light) */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 12px 28px -6px rgba(15, 23, 42, 0.12), 0 4px 10px -2px rgba(15, 23, 42, 0.05);
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.32);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Brand & Gradient (Dark) */
+  --color-primary: #2563EB;
+  --color-primary-hover: #3B82F6;
+  --color-primary-subtle: rgba(37, 99, 235, 0.18);
+  --color-primary-border: rgba(59, 130, 246, 0.42);
+  --color-on-primary: #FFFFFF;
+
+  --brand-gradient-subtle: linear-gradient(
+    135deg,
+    rgba(37, 99, 235, 0.16) 0%,
+    rgba(6, 182, 212, 0.12) 52%,
+    rgba(139, 92, 246, 0.16) 100%
+  );
+  --brand-glow: radial-gradient(
+    ellipse 65% 50% at 50% 0%,
+    rgba(37, 99, 235, 0.24) 0%,
+    rgba(6, 182, 212, 0.12) 42%,
+    rgba(139, 92, 246, 0.08) 65%,
+    transparent 80%
+  );
+
+  /* Surfaces & Neutrals (Dark) */
+  --color-bg: #050816;
+  --color-sidebar: #0A0F20;
+  --color-surface: #101729;
+  --color-surface-subtle: #162038;
+  --color-surface-hover: #1E2B4A;
+  --color-border: rgba(148, 163, 184, 0.15);
+  --color-border-strong: rgba(148, 163, 184, 0.28);
+
+  /* Text (Dark) */
+  --color-text: #F8FAFC;
+  --color-text-secondary: #CBD5E1;
+  --color-text-muted: #94A3B8;
+
+  /* Semantic Status (Dark) */
+  --color-success: #4ADE80;
+  --color-success-bg: rgba(34, 197, 94, 0.14);
+  --color-success-border: rgba(74, 222, 128, 0.32);
+
+  --color-warning: #FBBF24;
+  --color-warning-bg: rgba(245, 158, 11, 0.14);
+  --color-warning-border: rgba(251, 191, 36, 0.32);
+
+  --color-danger: #F87171;
+  --color-danger-bg: rgba(239, 68, 68, 0.15);
+  --color-danger-border: rgba(248, 113, 113, 0.34);
+
+  --color-info: #22D3EE;
+  --color-info-bg: rgba(6, 182, 212, 0.14);
+  --color-info-border: rgba(34, 211, 238, 0.32);
+
+  /* Elevation (Dark) */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --shadow-md: 0 16px 36px -8px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.45);
+}
