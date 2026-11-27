@@ -148,7 +148,7 @@ async function seedStaffAccount(input: StaffSeedInput): Promise<void> {
         await client.query(
           `INSERT INTO business_locations (business_id, name)
            VALUES ($1, $2)
-           ON CONFLICT (business_id, lower(name)) DO NOTHING`,
+           ON CONFLICT (business_id, lower(name)) WHERE archived_at IS NULL DO NOTHING`,
           [resolvedBusinessId, input.locationName],
         );
       }

@@ -30,16 +30,21 @@ after(() => new Promise((resolve, reject) => {
   server.close((error) => error ? reject(error) : resolve());
 }));
 
-test('health returns service liveness without advertising Express', async () => {
+test('health and public branding endpoints return centralized product branding without advertising Express', async () => {
+  const { publicBranding } = await import('../../packages/branding/index.js');
+
   const response = await fetch(`${baseUrl}/api/v1/health`);
   const body = await response.json();
 
   assert.equal(response.status, 200);
   assert.equal(body.status, 'ok');
-  assert.equal(typeof body.service, 'string');
-  assert.ok(body.service.length > 0);
+  assert.equal(body.service, publicBranding.productName);
   assert.ok(Number.isFinite(Date.parse(body.timestamp)));
   assert.equal(response.headers.get('x-powered-by'), null);
+
+  const brandingResponse = await fetch(`${baseUrl}/api/v1/branding`);
+  assert.equal(brandingResponse.status, 200);
+  assert.deepEqual(await brandingResponse.json(), publicBranding);
 });
 
 test('unknown root and API routes return the same JSON 404 contract', async () => {

@@ -24,6 +24,7 @@ test('unspecified optional settings receive safe development defaults', () => {
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
     databaseQueryTimeoutMs: 5000, authSessionTtlMs: 28_800_000,
     authLoginMaxAttempts: 5, authLoginWindowMs: 900_000, authLoginLockoutMs: 900_000,
+    conversationRetentionDays: 90,
   });
 });
 
@@ -34,6 +35,7 @@ test('valid environment values and multiple origins are parsed', () => {
     AI_SERVICE_URL: 'https://ai.example.com:8443/', AI_SERVICE_TIMEOUT_MS: '2500',
     AUTH_SESSION_TTL_MS: '60000', AUTH_LOGIN_MAX_ATTEMPTS: '8',
     AUTH_LOGIN_WINDOW_MS: '120000', AUTH_LOGIN_LOCKOUT_MS: '300000',
+    CONVERSATION_RETENTION_DAYS: '180',
   });
   assert.deepEqual(result, {
     port: 4100, nodeEnv: 'production',
@@ -42,6 +44,7 @@ test('valid environment values and multiple origins are parsed', () => {
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
     databaseQueryTimeoutMs: 5000, authSessionTtlMs: 60_000,
     authLoginMaxAttempts: 8, authLoginWindowMs: 120_000, authLoginLockoutMs: 300_000,
+    conversationRetentionDays: 180,
   });
 });
 
@@ -67,7 +70,7 @@ test('the trackable example contains valid non-secret configuration', () => {
   assert.deepEqual(Object.keys(example).sort(), [
     'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL',
     'AUTH_LOGIN_LOCKOUT_MS', 'AUTH_LOGIN_MAX_ATTEMPTS', 'AUTH_LOGIN_WINDOW_MS', 'AUTH_SESSION_TTL_MS',
-    'CORS_ORIGIN', 'DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS',
+    'CONVERSATION_RETENTION_DAYS', 'CORS_ORIGIN', 'DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS',
     'DATABASE_QUERY_TIMEOUT_MS', 'DATABASE_URL', 'NODE_ENV', 'PORT',
   ]);
   assert.equal(validateEnv(example).port, 3000);
@@ -158,6 +161,7 @@ test('auth session and rate-limit settings reject invalid values', () => {
     ['AUTH_LOGIN_MAX_ATTEMPTS', ['0', '101', '-1', '1.5'], ['1', '100']],
     ['AUTH_LOGIN_WINDOW_MS', ['0', '999', '86400001', ''], ['1000', '86400000']],
     ['AUTH_LOGIN_LOCKOUT_MS', ['0', '999', '86400001', ' '], ['1000', '86400000']],
+    ['CONVERSATION_RETENTION_DAYS', ['0', '3651', '-1', '1.5', ''], ['1', '3650']],
   ]) {
     for (const value of invalid) {
       assert.throws(() => validateEnv({ [name]: value }), new RegExp(`${name} must be an integer`));

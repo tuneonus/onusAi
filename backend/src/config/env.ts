@@ -97,11 +97,13 @@ export function validateEnv(values: NodeJS.ProcessEnv) {
   const authLoginMaxAttempts = boundedInt(values, 'AUTH_LOGIN_MAX_ATTEMPTS', 5, 1, 100);
   const authLoginWindowMs = boundedInt(values, 'AUTH_LOGIN_WINDOW_MS', 900_000, 1000, 86_400_000);
   const authLoginLockoutMs = boundedInt(values, 'AUTH_LOGIN_LOCKOUT_MS', 900_000, 1000, 86_400_000);
+  const conversationRetentionDays = boundedInt(values, 'CONVERSATION_RETENTION_DAYS', 90, 1, 3650);
 
   return {
     port, nodeEnv, corsOrigins, aiServiceUrl, aiServiceTimeoutMs,
     databaseUrl, databaseConnectionTimeoutMs, databaseIdleTimeoutMs, databaseQueryTimeoutMs,
     authSessionTtlMs, authLoginMaxAttempts, authLoginWindowMs, authLoginLockoutMs,
+    conversationRetentionDays,
   } as const;
 }
 

@@ -24,15 +24,15 @@ Last updated: 27 November 2026 (Asia/Kolkata). This record separates repository 
 | Repository foundation | Verified locally in 00.01/00.02; initial README-only push verified separately |
 | Requirements and design | Documentation verified in 00.03; foundations and health communication verified below, business/AI product features remain planned |
 | Applications | Dashboard scaffold/dependencies observed during verification, outside this step's changes; not reviewed or verified. Other frontend directories remain empty. |
-| Node.js business service | Foundation, native-fetch AI health client, PostgreSQL connection pool/readiness, staff authentication/sessions/CSRF, and tenant-aware owner/operator authorization verified. No public registration, OAuth, business CRUD mutations, or AI workflows yet. |
+| Node.js business service | Foundation, native-fetch AI health client, PostgreSQL connection pool/readiness, staff authentication/sessions/CSRF, tenant-aware owner/operator authorization, business profile & location CRUD (`04.03`), versioned assistant configuration/tool scopes/knowledge visibility/centralized branding (`04.04`), and persistent conversation/message records & retention/deletion contract (`04.05`) verified. No public registration, OAuth, visitor widget sessions, or AI workflows yet. |
 | FastAPI service | Foundation verified; its existing `/api/v1/health` is called by Node.js. No Python source changes were required for basic communication. |
-| PostgreSQL | Node.js pool/readiness, SQL migration runner (`backend/src/integrations/database/migrations.ts`, `backend/src/migrate.ts`), `schema_migrations`, core tenant schema (`users`, `businesses`, `business_members`, `business_locations`), and auth schema (`user_credentials`, `staff_sessions`, `auth_login_attempts`, `updated_at` triggers) verified against the running Docker database on host port 5433. No ORM or row-level security yet. |
+| PostgreSQL | Node.js pool/readiness, SQL migration runner (`backend/src/integrations/database/migrations.ts`, `backend/src/migrate.ts`), `schema_migrations`, core/extended tenant schema (`users`, `businesses`, `business_members`, `business_locations`), auth schema (`user_credentials`, `staff_sessions`, `auth_login_attempts`), assistant schema (`assistants`, `assistant_versions`, `assistant_version_knowledge_locations`), and conversation schema (`conversations`, `conversation_messages`) verified against the running Docker database on host port 5433 (migrations `0001`–`0015`). No ORM or row-level security yet. |
 | Qdrant, Redis | Docker readiness previously reported by the user; no application integration added or readiness checks repeated in the PostgreSQL step |
 | Node.js-to-FastAPI communication | Local health contract verified with configurable URL/timeout, runtime response validation, safe errors, and real communication between both backend processes |
 | Gemini, LangChain, LangGraph, MCP, LangSmith | Not integrated; no live-model calls, agents, embeddings, traces, or experiments |
-| Business/AI features | Not implemented: no knowledge ingestion, RAG, widget, conversations, leads, bookings, approvals, or analytics |
-| Centralized branding configuration | Backend product name centralized in `backend/src/config/branding.ts`; AI service title centralized in `Settings.app_name`. Cross-application shared configuration remains planned for 04.04 |
-| Tests | 94 Node.js tests passed with live PostgreSQL checks enabled (0 failed, 0 skipped). Database-independent Node.js run: 69 passed, 6 live integration checks skipped as designed. (16 existing FastAPI tests were verified in an earlier step and not re-run here because Python files were unchanged.) |
+| Business/AI features | Phase `04` backend persistence & access foundations (`04.01`–`04.05`) verified; no visitor widget sessions, knowledge ingestion, RAG, leads, bookings, approvals, or analytics yet |
+| Centralized branding configuration | Public platform branding centralized in `packages/branding/` (`branding.json`, `index.js`, `index.d.ts`), consumed by `backend/src/config/branding.ts`, and exposed via `GET /api/v1/branding`; AI service title remains explicit in `Settings.app_name` |
+| Tests | 119 Node.js tests passed with live PostgreSQL checks enabled (0 failed, 0 skipped). Database-independent Node.js run: 80 passed, 9 live integration checks skipped as designed. (16 existing FastAPI tests were verified in an earlier step and not re-run here because Python files were unchanged.) |
 | Docker, CI/CD, deployment | Existing `compose.yaml` and running data-service containers preserved; application containerization, CI/CD, and public deployment not implemented in this step |
 | Dependencies | PostgreSQL step installed `pg` and development-only `@types/pg` after explicit user approval; backend manifest/lockfile updated. Other existing dependencies preserved. Dashboard dependencies remain unverified. |
 
@@ -426,16 +426,176 @@ Implemented roadmap step 04.02 using only existing Node.js/Express/PostgreSQL de
 
 Limitations: no scheduled cleanup job purges expired `staff_sessions`/`auth_login_attempts` rows yet; `req.ip` relies on Express's default `trust proxy = false` (must be explicitly configured if deployed behind a reverse proxy); PostgreSQL row-level security remains planned for `13.01`; no public registration, password reset, MFA, or frontend login UI is implemented.
 
+## Business profile and location CRUD (04.03) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and design
+
+Implemented roadmap step `04.03` (FR-01 and FR-03) using existing Node.js/Express/PostgreSQL dependencies (no new packages installed):
+
+- **Business profile management**: Supports `POST /api/v1/businesses` (transactional creation of business + `'owner'` membership for the authenticated staff user) and `PATCH /api/v1/businesses/:businessId` (owner-only partial updates), while preserving nullable DB defaults for existing `0002`/seeded rows.
+- **Business location CRUD with soft-archival**: Supports `GET` list (with optional `?includeArchived=true|false`), `GET` single, `POST` create, `PATCH` partial update, and `DELETE` soft-archive (`archived_at`) so future assistant/appointment foreign-key references remain intact while freeing archived location names for reuse.
+- **Timezone and opening-hours validation**: Enforces valid IANA timezone names (explicit area/city or `UTC`, checked against `Intl.DateTimeFormat`) and 7-day `openingHours` objects supporting closed days (`{ closed: true }`), 24-hour `HH:MM` intervals, overnight shifts (`close < open`), and cross-day overnight carryover overlap rejection (including `sunday` into `monday`).
+
+### New and updated files
+
+| File under `backend/` | Responsibility |
+| --- | --- |
+| `database/migrations/0009_extend_businesses_profile.sql` | Adds nullable `description`, `contact_email`, `contact_phone`, `website_url`, `timezone`, and `opening_hours` (`jsonb`) with PostgreSQL `CHECK` constraints while preserving existing `businesses` rows |
+| `database/migrations/0010_extend_business_locations.sql` | Adds nullable `address_line1`, `address_line2`, `city`, `state_region`, `postal_code`, `country_code`, `contact_email`, `contact_phone`, `timezone`, `opening_hours`, and `archived_at`; enforces address consistency and replaces `business_locations_business_name_unique` as a partial unique index `WHERE archived_at IS NULL` plus `business_locations_business_active_idx` |
+| `src/modules/businesses/businesses.types.ts` | Domain types for `BusinessProfile`, `BusinessLocation`, `LocationAddress`, `WeeklyOpeningHours`, and create/update inputs |
+| `src/modules/businesses/businesses.validation.ts` | Strict object/key validation, string trimming/email/phone/URL checks, IANA timezone validation, weekly opening-hours + overnight overlap checks, address validation, and `includeArchived` query parsing |
+| `src/modules/businesses/businesses.repository.ts` | Parameterized SQL reads/writes, transactional `createBusinessWithOwner`, tenant-scoped location queries (`WHERE business_id = $1 AND id = $2`), soft-archival updates, and `23505` conflict mapping (`LOCATION_NAME_CONFLICT`) |
+| `src/modules/businesses/businesses.service.ts` | Business profile and location CRUD coordination and `404`/`409` status mapping (`LOCATION_NOT_FOUND`, `LOCATION_ARCHIVED`, `LOCATION_ALREADY_ARCHIVED`) |
+| `src/modules/businesses/businesses.controller.ts` | Request validation, `Cache-Control: no-store` headers, and ISO timestamp serialization |
+| `src/modules/businesses/businesses.routes.ts` | Router-level `requireAuth` and `requireCsrf`, plus `requireTenantMembership(['owner', 'operator'])` for reads and `requireTenantMembership(['owner'])` for profile/location mutations |
+| `src/seed-staff.ts` | Updates location seed upsert clause to `ON CONFLICT (business_id, lower(name)) WHERE archived_at IS NULL DO NOTHING` to match the partial unique index |
+| `tests/businesses.unit.test.mjs`, `tests/businesses.integration.test.mjs`, and `tests/migrations.integration.test.mjs` | Unit tests for timezone/opening-hours/address/payload validation, live PostgreSQL HTTP tests for CRUD/RBAC/CSRF/tenant isolation/archival, and updated migration schema/index/constraint checks |
+
+### API contracts and permissions
+
+All routes are mounted under `/api/v1/businesses`, require a valid `onusai_session` cookie (`401 AUTHENTICATION_REQUIRED`), enforce `X-CSRF-Token` on `POST`/`PATCH`/`DELETE` (`403 CSRF_TOKEN_INVALID`), and return `Cache-Control: no-store`.
+
+| Method & Path | Access | Behavior & key responses |
+| --- | --- | --- |
+| `GET /api/v1/businesses` | Authenticated staff | Lists businesses where the user has a verified membership (`200 { businesses }`) |
+| `POST /api/v1/businesses` | Authenticated staff | Validates `{ name, description?, contactEmail?, contactPhone?, websiteUrl?, timezone?, openingHours? }`; creates business + `'owner'` membership in one transaction (`201 { business, membership }`) |
+| `GET /api/v1/businesses/:businessId` | Tenant `owner` or `operator` | Returns full business profile and membership (`200 { business, membership }`); non-members receive `403 TENANT_ACCESS_DENIED` |
+| `PATCH /api/v1/businesses/:businessId` | Tenant `owner` only | Partial profile update (at least one field; `null` clears nullable fields; `name` cannot be `null`) (`200 { business, membership }`); operators receive `403 INSUFFICIENT_PERMISSIONS` |
+| `GET /api/v1/businesses/:businessId/locations` | Tenant `owner` or `operator` | Lists tenant locations; excludes archived by default unless `?includeArchived=true` (`200 { businessId, locations }`) |
+| `POST /api/v1/businesses/:businessId/locations` | Tenant `owner` only | Validates required `name` & `timezone` plus optional `address` (`line1`, `line2?`, `city`, `stateRegion?`, `postalCode?`, `countryCode`), `contactEmail`, `contactPhone`, `openingHours` (`201 { businessId, location }`; duplicate active name returns `409 LOCATION_NAME_CONFLICT`) |
+| `GET /api/v1/businesses/:businessId/locations/:locationId` | Tenant `owner` or `operator` | Returns tenant-scoped location (`200 { businessId, location }`); foreign or unknown `locationId` returns `404 LOCATION_NOT_FOUND` |
+| `PATCH /api/v1/businesses/:businessId/locations/:locationId` | Tenant `owner` only | Partial update on active location (`200 { businessId, location }`); archived location returns `409 LOCATION_ARCHIVED`; foreign `locationId` returns `404 LOCATION_NOT_FOUND` |
+| `DELETE /api/v1/businesses/:businessId/locations/:locationId` | Tenant `owner` only | Soft-archives location by setting `archived_at` (`200 { businessId, location }`); already archived returns `409 LOCATION_ALREADY_ARCHIVED`; foreign `locationId` returns `404 LOCATION_NOT_FOUND` |
+
+### Verification evidence
+
+- `npm run typecheck`: passed with 0 errors.
+- `npm run build`: passed with 0 errors.
+- `npm run db:migrate`: applied `0009_extend_businesses_profile.sql` and `0010_extend_business_locations.sql` to the running Docker PostgreSQL instance (`127.0.0.1:5433`) and confirmed idempotency on second run (`Database migrations are up to date.`).
+- Live PostgreSQL `npm test` (`TEST_DATABASE_URL` set): **103 passed, 0 failed, 0 skipped** (covers timezone/opening-hours/overnight-overlap edge cases, address & partial-update validation, transactional business creation, owner/operator RBAC, CSRF enforcement, cross-tenant `403` and foreign-`locationId` `404` isolation, soft-archival + active-name reuse, and updated `0001`–`0010` migration/index/constraint checks).
+- Database-independent `npm test` (`TEST_DATABASE_URL` unset): **73 passed, 0 failed, 7 skipped** (live DB suites skip cleanly when `TEST_DATABASE_URL` is unset).
+
+Limitations: no unarchive/restore endpoint is implemented for archived locations (re-creating a new location with the same name is supported); no self-service team-member invite/role-management endpoints exist yet; no frontend dashboard UI or assistant configuration (`04.04`) is implemented; `db:seed:staff` was updated to match the partial unique index and compiled via `npm run build`, though a standalone CLI run of `db:seed:staff` was not re-executed separately in this step.
+
+## Versioned assistant configuration, tool scopes, knowledge visibility, and centralized branding (04.04) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and design
+
+Implemented roadmap step `04.04` (FR-04 and `packages/` public branding) without introducing monorepo tooling or new dependencies:
+
+- **Business-level & location-level assistants**: Supports one business-level assistant (`locationId = null`) and/or one assistant per active business location within each tenant, enforced via partial unique indexes and composite tenant-consistent foreign keys (`assistants_business_location_fk`).
+- **Immutable version lifecycle & concurrency-safe publishing**: Each assistant starts with draft `v1` and supports draft creation (`POST .../versions`), draft editing (`PATCH .../versions/:versionId`), version history (`GET .../versions`), and transactional publishing (`POST .../versions/:versionId/publish`). Publishing acquires `FOR UPDATE` on the parent `assistants` row, verifies draft status and active location references, supersedes any prior published version, and relies on partial unique indexes plus PostgreSQL immutability triggers (`enforce_assistant_version_immutability`, `enforce_assistant_knowledge_locations_draft`) to prevent race conditions or post-publish edits.
+- **Tool scopes (deny by default)**: `allowedTools` defaults to `[]` and validates against `APPROVED_TOOL_REGISTRY` (`lookup_availability`, `request_lead_capture`, `request_appointment_booking`, `request_human_handoff`); unapproved tool IDs fail with `400 UNAPPROVED_TOOL_SCOPE`.
+- **Knowledge visibility settings**: Stores `allowedKnowledgeScopes` (subset of `'public' | 'staff_only'`, defaulting to `['public']`), `knowledgeLocationScope` (`'business_wide' | 'assigned_location' | 'selected_locations'`), and tenant-verified `knowledgeLocationIds` backed by `assistant_version_knowledge_locations` composite foreign keys.
+- **Centralized public branding**: `packages/branding/` (`branding.json`, `index.js`, `index.d.ts`) is the single source of truth for OnusAI platform branding (`productName`, `shortName`, `tagline`, `attributionText`), consumed by `backend/src/config/branding.ts` and exposed via `GET /api/v1/branding`, kept strictly separate from per-tenant assistant branding (`displayName`, `welcomeMessage`, `tone`, `description`). `toPublicAssistantProfile` omits private `systemInstructions`, `modelSettings`, `allowedTools`, and `allowedKnowledgeScopes`.
+
+### New and updated files
+
+| File | Responsibility |
+| --- | --- |
+| `packages/branding/branding.json`, `index.js`, `index.d.ts` | Shared dependency-free public platform branding configuration and typed ESM export |
+| `backend/src/config/branding.ts` | Loads and validates platform branding from `packages/branding/branding.json` without duplicating product-name literals |
+| `backend/src/modules/branding/branding.routes.ts` & `backend/src/routes/index.ts` | Exposes public `GET /api/v1/branding` returning centralized platform branding |
+| `backend/database/migrations/0011_create_assistants.sql` | Creates `assistants` with tenant-consistent composite FK to `business_locations`, partial unique scope indexes, and `set_updated_at` trigger |
+| `backend/database/migrations/0012_create_assistant_versions.sql` | Creates `assistant_versions` and `assistant_version_knowledge_locations` with bounded checks, one-draft/one-published partial unique indexes, composite tenant FKs, and immutability triggers |
+| `backend/src/modules/assistants/*` | `assistants.types.ts`, `assistants.validation.ts`, `assistants.repository.ts`, `assistants.service.ts`, `assistants.controller.ts`, `assistants.routes.ts` |
+| `backend/src/modules/businesses/businesses.routes.ts` | Mounts `assistantsRouter` under `/:businessId/assistants` (inheriting `requireAuth` and `requireCsrf`) |
+| `backend/tests/assistants.unit.test.mjs`, `assistants.integration.test.mjs`, `app.test.mjs`, `migrations.integration.test.mjs` | Unit tests for branding, tool/model/knowledge validation, and public projection privacy; live PostgreSQL tests for CRUD, concurrent publishing, rollback, immutability, RBAC, CSRF, and cross-tenant isolation |
+
+### API contracts and permissions
+
+All assistant endpoints live under `/api/v1/businesses/:businessId/assistants`, require `onusai_session` (`401`), enforce `X-CSRF-Token` on mutations (`403`), and return `Cache-Control: no-store`.
+
+| Method & Path | Access | Behavior & key responses |
+| --- | --- | --- |
+| `GET /api/v1/branding` | Public | Returns centralized platform branding (`{ productName, shortName, tagline, attributionText }`) |
+| `GET /api/v1/businesses/:businessId/assistants/tools` | Tenant `owner` or `operator` | Lists `APPROVED_TOOL_REGISTRY` (`defaultAllowed: false`) |
+| `GET /api/v1/businesses/:businessId/assistants` | Tenant `owner` or `operator` | Lists tenant assistants with `publishedVersion` and `draftVersion` (`200`) |
+| `POST /api/v1/businesses/:businessId/assistants` | Tenant `owner` only | Creates assistant (`locationId` optional) + draft `v1` transactionally (`201`); duplicate scope -> `409 ASSISTANT_ALREADY_EXISTS`; foreign location -> `404 LOCATION_NOT_FOUND`; archived location -> `409 LOCATION_ARCHIVED` |
+| `GET /api/v1/businesses/:businessId/assistants/:assistantId` | Tenant `owner` or `operator` | Returns assistant + `publishedVersion` + `draftVersion` (`200`; foreign -> `404 ASSISTANT_NOT_FOUND`) |
+| `GET /api/v1/businesses/:businessId/assistants/:assistantId/versions` | Tenant `owner` or `operator` | Lists all versions ordered descending by `versionNumber` (`200`) |
+| `POST /api/v1/businesses/:businessId/assistants/:assistantId/versions` | Tenant `owner` only | Clones latest version with optional overrides as a new `draft` (`201`; existing draft -> `409 DRAFT_ALREADY_EXISTS`) |
+| `GET /api/v1/businesses/:businessId/assistants/:assistantId/versions/:versionId` | Tenant `owner` or `operator` | Returns single version (`200`; foreign -> `404 ASSISTANT_VERSION_NOT_FOUND`) |
+| `PATCH /api/v1/businesses/:businessId/assistants/:assistantId/versions/:versionId` | Tenant `owner` only | Updates draft version (`200`; non-draft -> `409 VERSION_IMMUTABLE`) |
+| `POST /api/v1/businesses/:businessId/assistants/:assistantId/versions/:versionId/publish` | Tenant `owner` only | Atomically supersedes prior published version and publishes draft (`200`; non-draft / concurrent loser -> `409 VERSION_NOT_DRAFT`) |
+
+### Verification evidence
+
+- `npm run typecheck`: passed with 0 errors.
+- `npm run build`: passed with 0 errors.
+- `npm run db:migrate`: applied `0011_create_assistants.sql` and `0012_create_assistant_versions.sql` to the running Docker PostgreSQL instance (`127.0.0.1:5433`) and confirmed idempotency on second run (`Database migrations are up to date.`).
+- Live PostgreSQL `npm test` (`TEST_DATABASE_URL` set): **112 passed, 0 failed, 0 skipped** (covers centralized branding, tool registry, unsafe model limits, knowledge location scopes, draft/publish/version history, concurrent publish race, failed publish rollback, DB immutability triggers, composite FK cross-tenant rejection, owner/operator RBAC, and CSRF).
+- Database-independent `npm test` (`TEST_DATABASE_URL` unset): **77 passed, 0 failed, 8 skipped** (live DB suites skip cleanly when `TEST_DATABASE_URL` is unset).
+
+Limitations: no public visitor/widget assistant endpoint exists yet (visitor installation IDs and scoped visitor sessions are planned for Phase `12.01`; `toPublicAssistantProfile` is verified by unit tests); no actual AI tool execution, Gemini model calls, document ingestion, or RAG retrieval exists yet; frontend applications (`dashboard/`, `chat-widget/`, etc.) have not been wired to `packages/branding/` yet.
+
+## Persistent conversation/message records and retention/deletion contract (04.05) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and design
+
+Implemented roadmap step `04.05` (FR-08 persistence, deterministic ordering, pagination, idempotency, and retention/deletion contract):
+
+- **Tenant-scoped conversations & historical version preservation**: Conversations associate with `business_id`, optional `location_id`, `assistant_id`, and the assistant's active `'published'` `assistant_version_id` at creation time via tenant-consistent composite foreign keys. Subsequent assistant publishes supersede the old version without altering existing conversations' historical `assistant_version_id`.
+- **Channel & role integrity**: Staff endpoints restrict conversation creation to `'playground'` (rejecting `'visitor'` spoofing with `403 FORBIDDEN_CONVERSATION_CHANNEL`) and restrict client-submitted messages to `'user'` and `'operator'` (rejecting `'assistant'` and `'system'` role impersonation with `403 FORBIDDEN_MESSAGE_ROLE`).
+- **Deterministic message ordering & idempotency**: `conversation_messages` assigns monotonic per-conversation `sequence_number` values under a `FOR UPDATE` lock on the parent conversation row and enforces unique `(business_id, conversation_id, idempotency_key)` and `(business_id, idempotency_key)` indexes so retried requests replay cleanly without duplicate writes (`409 IDEMPOTENCY_KEY_CONFLICT` if reused with a different payload).
+- **Retention & deletion contract**: Tracks `retain_until` per conversation using per-business `retention_days` (`1`–`3650`, optional override on `businesses`) or `CONVERSATION_RETENTION_DAYS` (default `90`). `DELETE` performs owner-only soft-deletion (`deleted_at`), immediately hiding the conversation and its messages from all normal APIs (`404 CONVERSATION_NOT_FOUND`), while `POST .../purge` performs owner-only hard deletion from PostgreSQL (cascading `conversation_messages`).
+
+### New and updated files
+
+| File under `backend/` | Responsibility |
+| --- | --- |
+| `src/config/env.ts`, `.env.example`, `tests/env.test.mjs` | Adds validated `CONVERSATION_RETENTION_DAYS` (1–3650, default 90) |
+| `database/migrations/0013_add_business_retention_policy.sql` | Adds nullable `retention_days` (`1..3650`) to `businesses` |
+| `database/migrations/0014_create_conversations.sql` | Adds `assistant_versions_assistant_id_unique`, creates `conversations` with composite tenant FKs, `channel`/`status` checks, `retain_until`, `deleted_at`, idempotency index, and `set_updated_at` trigger |
+| `database/migrations/0015_create_conversation_messages.sql` | Creates `conversation_messages` with composite FK to `conversations`, unique `(conversation_id, sequence_number)`, role/content/metadata checks, and idempotency index |
+| `src/modules/businesses/*` & `tests/businesses.unit.test.mjs` | Adds optional `retentionDays` to business profile types, validation, repository, controller, and mounts `conversationsRouter` under `/:businessId/conversations` |
+| `src/modules/conversations/*` | `conversations.types.ts`, `conversations.validation.ts`, `conversations.repository.ts`, `conversations.service.ts`, `conversations.controller.ts`, `conversations.routes.ts` |
+| `tests/conversations.unit.test.mjs`, `conversations.integration.test.mjs`, `migrations.integration.test.mjs` | Unit tests for role/channel/metadata/pagination/idempotency validation; live PostgreSQL tests for persistence across restart, ordering, pagination, idempotency, historical version preservation, soft-delete hiding, owner-only purge, RBAC, CSRF, and cross-tenant isolation |
+
+### API contracts and permissions
+
+All conversation endpoints live under `/api/v1/businesses/:businessId/conversations`, require `onusai_session` (`401`), enforce `X-CSRF-Token` on mutations (`403`), and return `Cache-Control: no-store`.
+
+| Method & Path | Access | Behavior & key responses |
+| --- | --- | --- |
+| `GET /api/v1/businesses/:businessId/conversations` | Tenant `owner` or `operator` | Lists non-deleted conversations ordered by recent activity (`limit`, `offset`, `channel`, `status`, `assistantId`, `locationId`, `pagination`) (`200`) |
+| `POST /api/v1/businesses/:businessId/conversations` | Tenant `owner` or `operator` | Creates `'playground'` conversation bound to published assistant version + `retainUntil` (`201`, or `200` on identical `Idempotency-Key` replay; draft-only assistant -> `409 ASSISTANT_NOT_PUBLISHED`; `'visitor'` -> `403 FORBIDDEN_CONVERSATION_CHANNEL`) |
+| `GET /api/v1/businesses/:businessId/conversations/:conversationId` | Tenant `owner` or `operator` | Returns non-deleted conversation (`200`; deleted or foreign -> `404 CONVERSATION_NOT_FOUND`) |
+| `PATCH /api/v1/businesses/:businessId/conversations/:conversationId` | Tenant `owner` or `operator` | Updates status (`active`, `pending_human`, `human_active`, `closed`) (`200`) |
+| `GET /api/v1/businesses/:businessId/conversations/:conversationId/messages` | Tenant `owner` or `operator` | Paginated chronological messages ordered by `sequenceNumber ASC` (`limit`, `offset`, `afterSequence`, `pagination`) (`200`) |
+| `POST /api/v1/businesses/:businessId/conversations/:conversationId/messages` | Tenant `owner` or `operator` | Persists `'user'` or `'operator'` message with monotonic `sequenceNumber` and validated `metadata` (`201`, or `200` on identical `Idempotency-Key` replay; `'assistant'`/`'system'` -> `403 FORBIDDEN_MESSAGE_ROLE`; conflicting key -> `409 IDEMPOTENCY_KEY_CONFLICT`) |
+| `DELETE /api/v1/businesses/:businessId/conversations/:conversationId` | Tenant `owner` only | Soft-deletes conversation (`deleted_at`), hiding it from normal APIs (`200`; operator -> `403 INSUFFICIENT_PERMISSIONS`) |
+| `POST /api/v1/businesses/:businessId/conversations/:conversationId/purge` | Tenant `owner` only | Hard-deletes conversation and cascaded messages from PostgreSQL (`200`; operator -> `403 INSUFFICIENT_PERMISSIONS`) |
+
+### Verification evidence
+
+- `npm run typecheck`: passed with 0 errors.
+- `npm run build`: passed with 0 errors.
+- `npm run db:migrate`: applied `0013`–`0015` to the running Docker PostgreSQL instance (`127.0.0.1:5433`) and confirmed idempotency (`Database migrations are up to date.`) with all 15 migration checksums matching `schema_migrations`.
+- Live PostgreSQL `npm test` (`TEST_DATABASE_URL` set): **119 passed, 0 failed, 0 skipped**.
+- Database-independent `npm test` (`TEST_DATABASE_URL` unset): **80 passed, 0 failed, 9 skipped**.
+
+### Phase 04 completion review & limitations
+
+- **Completed in Phase 04 (`04.01`–`04.05`)**: Versioned PostgreSQL migrations (`0001`–`0015`), staff session auth/CSRF/lockouts/RBAC, business profile & location CRUD with timezone/hours validation and soft-archival, versioned assistant configuration/tool scopes/knowledge visibility/`packages/branding`, and persistent playground conversations/messages with deterministic ordering, pagination, idempotency, and soft-delete/purge contracts.
+- **Deferred / incomplete outside Phase 04**: Automated scheduled cleanup for expired `retain_until`, `staff_sessions`, and `auth_login_attempts` rows; cross-store deletion covering Qdrant/Redis/LangGraph checkpoints once introduced; PostgreSQL Row-Level Security (`13.01`); `'visitor'` channel creation & visitor sessions (`12.01`); automated `'assistant'`/`'system'` AI message generation, RAG, and frontend screens (`05+`).
+
 ## Upcoming phases and next proposed step
 
-The Node.js and FastAPI foundations, basic local health communication, PostgreSQL connection foundation, core schema/migration system (04.01), and staff authentication/session/tenant-authorization layer (04.02) are verified in their respective records above. Await user review and approval of the next scope. Next roadmap item in Phase 04 is `04.03` (business profile and location CRUD with timezone/hours validation). No further feature, commit, or push is authorized by this record.
+Phase `04` (`04.01`–`04.05`) is verified in the records above. Await user review and approval before any Git commit/push or starting Phase `05` (`05.01` — minimal React/TypeScript dashboard with shared branding, accessible shell, and approved build tooling). No further feature, commit, or push is authorized by this record.
 
 | Phase | Planned work | Current state |
 | --- | --- | --- |
 | 01 | Node.js business-service foundation and tests | Approved foundation verified: 01.01 complete; 01.02 error/routing/shutdown portions complete with correlation IDs/general request validation pending; 01.03 foundation tests verified using the built-in runner |
 | 02 | FastAPI AI-service foundation and tests | 02.01 verified with explicitly requested errors/logging/lifespan and proportionate tests; mock contract 02.02 and remaining async-boundary work 02.03 not implemented |
 | 03 | Private backend integration and Gemini baseline | Basic health communication/timeout/error handling verified as the approved subset of 03.01; authentication, delegation, correlation IDs, and Gemini steps remain unimplemented |
-| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | PostgreSQL connectivity/readiness, step 04.01 (core schema and migrations `0001`–`0005`), and step 04.02 (staff auth, sessions, CSRF, brute-force protection, owner/operator RBAC, tenant-aware access, migrations `0006`–`0008`) verified; steps 04.03–04.05 remain unimplemented |
+| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | Steps `04.01`–`04.05` (migrations `0001`–`0015`) verified; automated retention purge job, cross-store cleanup, RLS (`13.01`), and visitor sessions (`12.01`) remain deferred to their respective phases |
 | 05 | React dashboard and staff playground | Not verified; separately appearing scaffold must be inspected at the approved step; steps 05.01–05.03 |
 | 06 | Document lifecycle, durable ingestion jobs, and chunking | Not started; steps 06.01–06.03 |
 | 07 | Embeddings, Qdrant, semantic search, and grounded RAG | Not started; steps 07.01–07.05 |
@@ -458,4 +618,4 @@ After an implementation step, record: what the developer can explain, a design a
 
 ## Approval boundary
 
-Stop after reporting the verified staff authentication, sessions, and tenant-aware access step (04.02). Await explicit user approval for the next scope (such as 04.03 business profile and location CRUD), additional dependencies, AI/model integration, frontend changes, or any commit/push. Completing this step does not authorize the next one.
+Stop after reporting the verified conversation/message persistence and retention/deletion step (04.05) and Phase 04 verification summary. Await explicit user approval for Git commit/push or starting Phase 05 (dashboard), additional dependencies, AI/model integration, or frontend changes. Completing Phase 04 does not authorize Phase 05.
