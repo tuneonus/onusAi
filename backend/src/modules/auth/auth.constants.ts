@@ -1,8 +1,8 @@
 import type { CookieOptions, Response } from 'express';
 import { env } from '../../config/env.js';
 
-export const SESSION_COOKIE_NAME = 'onusai_session';
-export const CSRF_COOKIE_NAME = 'onusai_csrf';
+export const SESSION_COOKIE_NAME = 'onussync_session';
+export const CSRF_COOKIE_NAME = 'onussync_csrf';
 export const CSRF_HEADER_NAME = 'x-csrf-token';
 
 function isSecureCookie(): boolean {

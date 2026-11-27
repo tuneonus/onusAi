@@ -49,7 +49,7 @@ function runSeedCli(t, envOverrides) {
 test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
   skip: !databaseUrl, timeout: 45_000,
 }, async (t) => {
-  const schema = `onusai_auth_test_${randomUUID().replaceAll('-', '')}`;
+  const schema = `onussync_auth_test_${randomUUID().replaceAll('-', '')}`;
   const observer = new Pool({
     connectionString: databaseUrl, connectionTimeoutMillis: 2000,
     query_timeout: 5000, statement_timeout: 5000,
@@ -173,8 +173,8 @@ test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
     assert.equal(loginRes.headers.get('cache-control'), 'no-store');
 
     const setCookies = loginRes.headers.getSetCookie();
-    const sessionHeader = setCookies.find((header) => header.startsWith('onusai_session='));
-    const csrfHeader = setCookies.find((header) => header.startsWith('onusai_csrf='));
+    const sessionHeader = setCookies.find((header) => header.startsWith('onussync_session='));
+    const csrfHeader = setCookies.find((header) => header.startsWith('onussync_csrf='));
     assert.ok(sessionHeader && sessionHeader.includes('HttpOnly') && sessionHeader.includes('SameSite=Lax') && sessionHeader.includes('Path=/api/v1'));
     assert.ok(csrfHeader && !csrfHeader.includes('HttpOnly') && csrfHeader.includes('SameSite=Lax'));
 
@@ -182,9 +182,9 @@ test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
     const loginBody = await loginRes.json();
     assert.equal(loginBody.user.email, 'alice@example.test');
     assert.equal(loginBody.memberships.length, 2);
-    assert.equal(loginBody.session.csrfToken, cookies.onusai_csrf);
+    assert.equal(loginBody.session.csrfToken, cookies.onussync_csrf);
     assert.ok(!JSON.stringify(loginBody).includes(alicePassword));
-    assert.ok(!JSON.stringify(loginBody).includes(cookies.onusai_session));
+    assert.ok(!JSON.stringify(loginBody).includes(cookies.onussync_session));
 
     // Database must hold only hashes, never plaintext passwords or raw session/CSRF tokens.
     const storedCredential = await postgresPool.query('SELECT password_hash FROM user_credentials WHERE user_id = $1', [aliceId]);
@@ -195,24 +195,24 @@ test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
     assert.equal(storedSession.rows.length, 1);
     assert.match(storedSession.rows[0].token_hash, /^[0-9a-f]{64}$/);
     assert.match(storedSession.rows[0].csrf_token_hash, /^[0-9a-f]{64}$/);
-    assert.notEqual(storedSession.rows[0].token_hash, cookies.onusai_session);
-    assert.notEqual(storedSession.rows[0].csrf_token_hash, cookies.onusai_csrf);
+    assert.notEqual(storedSession.rows[0].token_hash, cookies.onussync_session);
+    assert.notEqual(storedSession.rows[0].csrf_token_hash, cookies.onussync_csrf);
     assert.equal(storedSession.rows[0].revoked_at, null);
 
     // /me verifies active session and echoes CSRF token when matching cookie is sent.
     const meRes = await fetch(`${baseUrl}/api/v1/auth/me`, {
-      headers: { cookie: `onusai_session=${cookies.onusai_session}; onusai_csrf=${cookies.onusai_csrf}` },
+      headers: { cookie: `onussync_session=${cookies.onussync_session}; onussync_csrf=${cookies.onussync_csrf}` },
     });
     assert.equal(meRes.status, 200);
     assert.equal(meRes.headers.get('cache-control'), 'no-store');
     const meBody = await meRes.json();
     assert.equal(meBody.user.id, aliceId);
-    assert.equal(meBody.session.csrfToken, cookies.onusai_csrf);
+    assert.equal(meBody.session.csrfToken, cookies.onussync_csrf);
 
     // Logout without or with wrong CSRF token must be rejected without revoking the session.
     const missingCsrfLogout = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: 'POST',
-      headers: { cookie: `onusai_session=${cookies.onusai_session}` },
+      headers: { cookie: `onussync_session=${cookies.onussync_session}` },
     });
     assert.equal(missingCsrfLogout.status, 403);
     assert.equal((await missingCsrfLogout.json()).error.code, 'CSRF_TOKEN_INVALID');
@@ -220,7 +220,7 @@ test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
     const badCsrfLogout = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: 'POST',
       headers: {
-        cookie: `onusai_session=${cookies.onusai_session}`,
+        cookie: `onussync_session=${cookies.onussync_session}`,
         'x-csrf-token': 'forged-csrf-token',
       },
     });
@@ -231,23 +231,23 @@ test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
     const logoutRes = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: 'POST',
       headers: {
-        cookie: `onusai_session=${cookies.onusai_session}`,
+        cookie: `onussync_session=${cookies.onussync_session}`,
         'x-csrf-token': loginBody.session.csrfToken,
       },
     });
     assert.equal(logoutRes.status, 200);
-    assert.ok(logoutRes.headers.getSetCookie().some((header) => header.startsWith('onusai_session=;')));
+    assert.ok(logoutRes.headers.getSetCookie().some((header) => header.startsWith('onussync_session=;')));
 
     const revokedRow = await postgresPool.query('SELECT revoked_at FROM staff_sessions WHERE user_id = $1', [aliceId]);
     assert.ok(revokedRow.rows[0].revoked_at instanceof Date);
 
     // Reusing the revoked session cookie must fail with 401 and clear the cookie.
     const afterLogoutMe = await fetch(`${baseUrl}/api/v1/auth/me`, {
-      headers: { cookie: `onusai_session=${cookies.onusai_session}` },
+      headers: { cookie: `onussync_session=${cookies.onussync_session}` },
     });
     assert.equal(afterLogoutMe.status, 401);
     assert.equal((await afterLogoutMe.json()).error.code, 'AUTHENTICATION_REQUIRED');
-    assert.ok(afterLogoutMe.headers.getSetCookie().some((header) => header.startsWith('onusai_session=;')));
+    assert.ok(afterLogoutMe.headers.getSetCookie().some((header) => header.startsWith('onussync_session=;')));
   });
 
   await t.test('expired and forged sessions are rejected', async () => {
@@ -266,13 +266,13 @@ test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
     );
 
     const expiredRes = await fetch(`${baseUrl}/api/v1/auth/me`, {
-      headers: { cookie: `onusai_session=${bobCookies.onusai_session}` },
+      headers: { cookie: `onussync_session=${bobCookies.onussync_session}` },
     });
     assert.equal(expiredRes.status, 401);
     assert.equal((await expiredRes.json()).error.code, 'AUTHENTICATION_REQUIRED');
 
     const forgedRes = await fetch(`${baseUrl}/api/v1/businesses`, {
-      headers: { cookie: 'onusai_session=completely-forged-token' },
+      headers: { cookie: 'onussync_session=completely-forged-token' },
     });
     assert.equal(forgedRes.status, 401);
     assert.equal((await forgedRes.json()).error.code, 'AUTHENTICATION_REQUIRED');
@@ -329,7 +329,7 @@ test('live authentication, sessions, CSRF, RBAC, and tenant isolation', {
       assert.equal(res.status, 200);
       const cookies = extractCookies(res);
       await res.arrayBuffer();
-      return `onusai_session=${cookies.onusai_session}; onusai_csrf=${cookies.onusai_csrf}`;
+      return `onussync_session=${cookies.onussync_session}; onussync_csrf=${cookies.onussync_csrf}`;
     }
 
     const aliceCookie = await loginAs('alice@example.test', alicePassword);

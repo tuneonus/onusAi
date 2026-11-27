@@ -1,13 +1,13 @@
-# OnusAI Frontend Architecture & Design Standards
+# OnusSync Frontend Architecture & Design Standards
 
-This document defines the architecture, design system standards, folder responsibilities, coding conventions, and incremental implementation plan for the OnusAI staff dashboard (`dashboard/`).
+This document defines the architecture, design system standards, folder responsibilities, coding conventions, and incremental implementation plan for the OnusSync staff dashboard (`dashboard/`).
 
 > **Latest implementation record:** [Section 11](#11-f7-conversations-and-real-gemini-playground) records F7 completion and live verification. **F6 implementation record:** [Section 10](#10-f6-ai-assistant-configuration-and-publishing) contains the latest assistant status and checks. **F5 record:** [Section 9](#9-f5-current-implementation-and-verification) records the fresh F5 implementation and verified architecture. It supersedes the earlier feature numbering, tooling descriptions, token examples, and verification counts below. Earlier workspace edits have been preserved.
 
 ## 1. Guiding Principles
 
 - **Backend-truthful UI**: Integrate directly with the Node.js Express API (`/api/v1`). Never invent fake business, member, assistant, or conversation data or fake analytics statistics.
-- **Session & CSRF preservation**: Authenticate via `HttpOnly` cookie sessions (`onusai_session`) with `credentials: 'include'` and attach `X-CSRF-Token` (sourced from `session.csrfToken` / `onusai_csrf` cookie) on all mutating requests (`POST`, `PATCH`, `PUT`, `DELETE`).
+- **Session & CSRF preservation**: Authenticate via `HttpOnly` cookie sessions (`onussync_session`) with `credentials: 'include'` and attach `X-CSRF-Token` (sourced from `session.csrfToken` / `onussync_csrf` cookie) on all mutating requests (`POST`, `PATCH`, `PUT`, `DELETE`).
 - **Centralized branding**: Read platform branding from `packages/branding/branding.json` (and verify/sync via `GET /api/v1/branding`) instead of scattering product-name literals across components.
 - **Commercial AI SaaS clarity**: Keep customer-facing navigation free of internal engineering/phase labels (e.g. "Step F4"), separate developer diagnostics (`/diagnostics`) from user-facing paths.
 - **Progressive enhancement**: Implement one feature step at a time; never initialize applications, install dependencies, create folders, or implement future features speculatively.

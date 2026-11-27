@@ -7,7 +7,7 @@ Object.assign(process.env, {
   PORT: '3000', NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173',
   AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
   AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
-  DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+  DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onussync',
   DATABASE_CONNECTION_TIMEOUT_MS: '5000', DATABASE_IDLE_TIMEOUT_MS: '30000',
   DATABASE_QUERY_TIMEOUT_MS: '5000',
 });
@@ -66,8 +66,8 @@ test('cookie parser handles multiple cookies, equals signs, encoded values, and 
   assert.deepEqual(parseCookies(undefined), {});
   assert.deepEqual(parseCookies(''), {});
   assert.deepEqual(
-    parseCookies('onusai_session=abc%3D123; onusai_csrf=xyz==; broken=%ZZ; =ignored'),
-    { onusai_session: 'abc=123', onusai_csrf: 'xyz==', broken: '%ZZ' },
+    parseCookies('onussync_session=abc%3D123; onussync_csrf=xyz==; broken=%ZZ; =ignored'),
+    { onussync_session: 'abc=123', onussync_csrf: 'xyz==', broken: '%ZZ' },
   );
 });
 

@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_DB: onusai
-      POSTGRES_USER: onusai
-      POSTGRES_PASSWORD: onusai_local_dev
+      POSTGRES_DB: onussync
+      POSTGRES_USER: onussync
+      POSTGRES_PASSWORD: onussync_local_dev
     ports:
       - "127.0.0.1:5433:5432"
     volumes:

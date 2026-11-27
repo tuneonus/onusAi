@@ -1,4 +1,4 @@
-export const CSRF_COOKIE_NAME = 'onusai_csrf';
+export const CSRF_COOKIE_NAME = 'onussync_csrf';
 export const CSRF_HEADER_NAME = 'X-CSRF-Token';
 
 export function readCookie(name: string): string | null {

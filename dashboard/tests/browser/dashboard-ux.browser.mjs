@@ -47,7 +47,7 @@ test('editor visuals, scrolling and navigation at desktop tablet mobile in both 
     await page.getByRole('tab',{name:'General',exact:true}).click();
     if(width>960){const before=await page.locator('.app-shell__sidebar').boundingBox();await page.locator('.app-shell__main').evaluate(e=>e.scrollTop=e.scrollHeight);const after=await page.locator('.app-shell__sidebar').boundingBox();assert.equal(after.y,before.y);assert.equal(after.height,before.height);}
     else {await page.getByRole('button',{name:'Open navigation menu',exact:true}).click();await page.getByRole('link',{name:'Overview',exact:true}).waitFor({state:'visible'});await page.getByRole('button',{name:'Close navigation menu',exact:true}).click();}
-    await page.screenshot({path:`/tmp/onus-editor-${width}-${theme}.png`,fullPage:true,animations:'disabled'});
+    await page.screenshot({path:`/tmp/onussync-editor-${width}-${theme}.png`,fullPage:true,animations:'disabled'});
   }
 });
 
@@ -74,7 +74,7 @@ test('chat history scrolls independently; visual checks at six viewport/theme co
     const header=page.locator('.conversation-thread > header');const before=await header.boundingBox();
     await page.locator('.conversation-messages').evaluate(e=>e.scrollTop=e.scrollHeight);const after=await header.boundingBox();assert.equal(after.y,before.y);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-    await page.screenshot({path:`/tmp/onus-chat-${width}-${theme}.png`,fullPage:true,animations:'disabled'});
+    await page.screenshot({path:`/tmp/onussync-chat-${width}-${theme}.png`,fullPage:true,animations:'disabled'});
   }
 });
 
@@ -89,7 +89,7 @@ test('existing pages retain responsive presentation and accessible sidebar while
       assert.equal((await page.locator('.app-shell__topbar').boundingBox()).y,0);
       if(width>960){assert.equal((await page.locator('.app-shell__sidebar').boundingBox()).y,0);}
       else {await page.getByRole('button',{name:'Open navigation menu',exact:true}).click();await page.getByRole('link',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'Close navigation menu',exact:true}).click();}
-      await page.screenshot({path:`/tmp/onus-${path.replaceAll('/','')||'overview'}-${width}-${theme}.png`,animations:'disabled'});
+      await page.screenshot({path:`/tmp/onussync-${path.replaceAll('/','')||'overview'}-${width}-${theme}.png`,animations:'disabled'});
     }
   }
 });

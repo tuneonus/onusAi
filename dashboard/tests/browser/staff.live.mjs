@@ -15,7 +15,7 @@ test('live staff page: session login, API contract, tenant switching, RBAC and l
   const requireBackend = createRequire(new URL('../../../backend/package.json', import.meta.url));
   const { Pool } = requireBackend('pg');
   const observer = new Pool({ connectionString: process.env.TEST_DATABASE_URL, connectionTimeoutMillis: 2000 });
-  const schema = `onusai_f5_test_${randomUUID().replaceAll('-', '')}`;
+  const schema = `onussync_f5_test_${randomUUID().replaceAll('-', '')}`;
   let created = false;
   let closeDatabasePool;
   t.after(async () => {

@@ -120,6 +120,6 @@ test('resolveActiveBusinessId validates stored ID against verified memberships',
 
 test('shared utility helpers behave deterministically', () => {
   assert.equal(cn('a', false, undefined, 'b'), 'a b');
-  assert.equal(readCookie('onusai_csrf'), null);
+  assert.equal(readCookie('onussync_csrf'), null);
 });
 

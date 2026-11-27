@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
 const TEST_INTERNAL_AUTH_SECRET = 'test-internal-auth-secret-at-least-32-characters';
 const CROSS_LANGUAGE_FIXTURE_TOKEN =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
-  'eyJpc3MiOiJvbnVzYWktYmFja2VuZCIsImF1ZCI6Im9udXNhaS1haS1iYWNrZW5kIiwic3ViIjoic2VydmljZTpiYWNrZW5kIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAwNjAsImp0aSI6ImZpeHR1cmUtdG9rZW4taWQtMSIsInNjb3BlIjoiYWk6aGVhbHRoIn0.' +
-  'Q0U_HUhxHrXZCVUeEREaSM9B90WqVu0QwO8g3m2bfCQ';
+  'eyJpc3MiOiJvbnVzc3luYy1iYWNrZW5kIiwiYXVkIjoib251c3N5bmMtYWktYmFja2VuZCIsInN1YiI6InNlcnZpY2U6YmFja2VuZCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwMDYwLCJqdGkiOiJmaXh0dXJlLXRva2VuLWlkLTEiLCJzY29wZSI6ImFpOmhlYWx0aCJ9.' +
+  '-obfmPUdE3I0V9w_tTFG1VkmSzsIpX9V6mLAbOsEpbU';
 
 const aiBackendDirectory = fileURLToPath(new URL('../../ai-backend', import.meta.url));
 const aiBackendPython = fileURLToPath(new URL('../../ai-backend/.venv/bin/python', import.meta.url));
@@ -115,9 +115,9 @@ before(async () => {
     AI_SERVICE_URL: upstreamUrl, AI_SERVICE_TIMEOUT_MS: '200',
     AI_INTERNAL_AUTH_SECRET: TEST_INTERNAL_AUTH_SECRET,
     AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS: '60',
-    AI_INTERNAL_AUTH_ISSUER: 'onusai-backend',
-    AI_INTERNAL_AUTH_AUDIENCE: 'onusai-ai-backend',
-    DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+    AI_INTERNAL_AUTH_ISSUER: 'onussync-backend',
+    AI_INTERNAL_AUTH_AUDIENCE: 'onussync-ai-backend',
+    DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onussync',
     DATABASE_CONNECTION_TIMEOUT_MS: '5000', DATABASE_IDLE_TIMEOUT_MS: '30000',
     DATABASE_QUERY_TIMEOUT_MS: '5000',
   });
@@ -172,8 +172,8 @@ test('Node AI health route propagates X-Request-Id and sends a signed HS256 serv
 
   const decoded = decodeAndVerifyHs256Jwt(captured.authorization, TEST_INTERNAL_AUTH_SECRET);
   assert.deepEqual(decoded.header, { alg: 'HS256', typ: 'JWT' });
-  assert.equal(decoded.payload.iss, 'onusai-backend');
-  assert.equal(decoded.payload.aud, 'onusai-ai-backend');
+  assert.equal(decoded.payload.iss, 'onussync-backend');
+  assert.equal(decoded.payload.aud, 'onussync-ai-backend');
   assert.equal(decoded.payload.sub, 'service:backend');
   assert.equal(decoded.payload.scope, 'ai:health');
   assert.equal(decoded.payload.exp - decoded.payload.iat, 60);
@@ -183,8 +183,8 @@ test('Node AI health route propagates X-Request-Id and sends a signed HS256 serv
 test('internal service token signer produces deterministic cross-language fixture and rejects invalid inputs', () => {
   const deterministicToken = signInternalServiceToken({
     secret: TEST_INTERNAL_AUTH_SECRET,
-    issuer: 'onusai-backend',
-    audience: 'onusai-ai-backend',
+    issuer: 'onussync-backend',
+    audience: 'onussync-ai-backend',
     ttlSeconds: 60,
     scope: 'ai:health',
     nowSeconds: 1_700_000_000,
@@ -200,8 +200,8 @@ test('internal service token signer produces deterministic cross-language fixtur
   assert.throws(
     () => signInternalServiceToken({
       secret: 'too-short',
-      issuer: 'onusai-backend',
-      audience: 'onusai-ai-backend',
+      issuer: 'onussync-backend',
+      audience: 'onussync-ai-backend',
       ttlSeconds: 60,
       scope: 'ai:health',
     }),
@@ -210,8 +210,8 @@ test('internal service token signer produces deterministic cross-language fixtur
   assert.throws(
     () => signInternalServiceToken({
       secret: TEST_INTERNAL_AUTH_SECRET,
-      issuer: 'onusai-backend',
-      audience: 'onusai-ai-backend',
+      issuer: 'onussync-backend',
+      audience: 'onussync-ai-backend',
       ttlSeconds: 0,
       scope: 'ai:health',
     }),
@@ -220,8 +220,8 @@ test('internal service token signer produces deterministic cross-language fixtur
   assert.throws(
     () => signInternalServiceToken({
       secret: TEST_INTERNAL_AUTH_SECRET,
-      issuer: 'onusai-backend',
-      audience: 'onusai-ai-backend',
+      issuer: 'onussync-backend',
+      audience: 'onussync-ai-backend',
       ttlSeconds: 60,
       scope: '   ',
     }),
@@ -503,7 +503,7 @@ test('live Node.js to FastAPI internal auth, respond contract, forged delegation
         AI_SERVICE_URL: `http://127.0.0.1:${aiPort}`,
         AI_SERVICE_TIMEOUT_MS: '3000',
         AI_INTERNAL_AUTH_SECRET: secret,
-        DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+        DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onussync',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -572,8 +572,8 @@ test('live Node.js to FastAPI internal auth, respond contract, forged delegation
       // Forged delegation: token signed for businessId 1111..., body claims 9999...
       const forgedToken = signInternalServiceToken({
         secret: process.env.AI_INTERNAL_AUTH_SECRET,
-        issuer: 'onusai-backend',
-        audience: 'onusai-ai-backend',
+        issuer: 'onussync-backend',
+        audience: 'onussync-ai-backend',
         ttlSeconds: 60,
         scope: 'ai:respond',
         delegation: {
@@ -614,7 +614,7 @@ test('live Node.js to FastAPI internal auth, respond contract, forged delegation
         AI_SERVICE_URL: `http://127.0.0.1:${aiPort}`,
         AI_SERVICE_TIMEOUT_MS: '3000',
         AI_INTERNAL_AUTH_SECRET: sharedSecret,
-        DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+        DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onussync',
       },
       encoding: 'utf8',
     },

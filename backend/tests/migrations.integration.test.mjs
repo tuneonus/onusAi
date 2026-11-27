@@ -14,7 +14,7 @@ const backendDirectory = fileURLToPath(new URL('../', import.meta.url));
 const sourceMigrations = new URL('../database/migrations/', import.meta.url);
 
 async function migrationFixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'onusai-migration-live-'));
+  const directory = await mkdtemp(join(tmpdir(), 'onussync-migration-live-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await cp(sourceMigrations, directory, { recursive: true });
   return pathToFileURL(`${directory}/`);
@@ -76,7 +76,7 @@ async function seed(client) {
 
 test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45_000 }, async (t) => {
   // Every test object is contained in a new schema; existing tables/data are untouched.
-  const schema = `onusai_migration_test_${randomUUID().replaceAll('-', '')}`;
+  const schema = `onussync_migration_test_${randomUUID().replaceAll('-', '')}`;
   const observer = new Pool({
     connectionString: databaseUrl, connectionTimeoutMillis: 2000,
     query_timeout: 5000, statement_timeout: 5000,
@@ -143,7 +143,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
     try {
       await lock.query('BEGIN');
       await lock.query('SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext($1::text))', [schema]);
-      const applicationName = `onusai-migration-race-${randomUUID()}`;
+      const applicationName = `onussync-migration-race-${randomUUID()}`;
       const url = new URL(scopedUrl);
       url.searchParams.set('application_name', applicationName);
       const first = startCli(subtest, url.href);

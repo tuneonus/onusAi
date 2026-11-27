@@ -41,8 +41,8 @@ def build_raw_jwt(
 
 def default_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
-        "iss": "onusai-backend",
-        "aud": "onusai-ai-backend",
+        "iss": "onussync-backend",
+        "aud": "onussync-ai-backend",
         "sub": "service:backend",
         "iat": FIXED_NOW,
         "exp": FIXED_NOW + 60,
@@ -76,8 +76,8 @@ class InternalAuthTests(unittest.TestCase):
                 required_scope="ai:health",
             )
 
-        self.assertEqual(context.issuer, "onusai-backend")
-        self.assertEqual(context.audience, "onusai-ai-backend")
+        self.assertEqual(context.issuer, "onussync-backend")
+        self.assertEqual(context.audience, "onussync-ai-backend")
         self.assertEqual(context.subject, "service:backend")
         self.assertEqual(context.token_id, "fixture-token-id-1")
         self.assertEqual(context.scopes, frozenset({"ai:chat", "ai:health"}))
@@ -86,8 +86,8 @@ class InternalAuthTests(unittest.TestCase):
         # Exact HS256 JWT produced by backend/src/integrations/ai/ai-auth.ts.
         node_generated_token = (
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-            "eyJpc3MiOiJvbnVzYWktYmFja2VuZCIsImF1ZCI6Im9udXNhaS1haS1iYWNrZW5kIiwic3ViIjoic2VydmljZTpiYWNrZW5kIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAwNjAsImp0aSI6ImZpeHR1cmUtdG9rZW4taWQtMSIsInNjb3BlIjoiYWk6aGVhbHRoIn0."
-            "Q0U_HUhxHrXZCVUeEREaSM9B90WqVu0QwO8g3m2bfCQ"
+            "eyJpc3MiOiJvbnVzc3luYy1iYWNrZW5kIiwiYXVkIjoib251c3N5bmMtYWktYmFja2VuZCIsInN1YiI6InNlcnZpY2U6YmFja2VuZCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwMDYwLCJqdGkiOiJmaXh0dXJlLXRva2VuLWlkLTEiLCJzY29wZSI6ImFpOmhlYWx0aCJ9."
+            "-obfmPUdE3I0V9w_tTFG1VkmSzsIpX9V6mLAbOsEpbU"
         )
         context = verify_internal_service_token(
             node_generated_token,
@@ -95,8 +95,8 @@ class InternalAuthTests(unittest.TestCase):
             now_seconds=FIXED_NOW + 10,
             required_scope="ai:health",
         )
-        self.assertEqual(context.issuer, "onusai-backend")
-        self.assertEqual(context.audience, "onusai-ai-backend")
+        self.assertEqual(context.issuer, "onussync-backend")
+        self.assertEqual(context.audience, "onussync-ai-backend")
         self.assertEqual(context.subject, "service:backend")
         self.assertEqual(context.token_id, "fixture-token-id-1")
         self.assertEqual(context.scopes, frozenset({"ai:health"}))

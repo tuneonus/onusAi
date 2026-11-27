@@ -1,6 +1,6 @@
 import type { UserMembershipSummary } from '../auth/types';
 
-export const ACTIVE_BUSINESS_STORAGE_KEY = 'onusai_active_business_id';
+export const ACTIVE_BUSINESS_STORAGE_KEY = 'onussync_active_business_id';
 
 export function resolveActiveBusinessId(
   memberships: readonly UserMembershipSummary[],

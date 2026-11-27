@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 
-const ACTION_EVENT = 'onusai:guarded-action';
+const ACTION_EVENT = 'onussync:guarded-action';
 
 // Workspace changes and sign-out do not necessarily navigate through the router.
 export function requestGuardedAction(proceed: () => void) {

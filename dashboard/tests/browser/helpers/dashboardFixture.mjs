@@ -77,7 +77,7 @@ async function fixture(t, { role = 'owner', memberHandler, ignoreMemberAbort = f
     if (business) return send({ business: { id: business.businessId, name: business.businessName, description: null, contactEmail: null, contactPhone: null, websiteUrl: null, timezone: 'UTC', openingHours: null, retentionDays: null, createdAt: '2026-11-27T00:00:00Z', updatedAt: '2026-11-27T00:00:00Z' }, membership: { id: business.membershipId, role: business.role } });
     // Branding falls back to the real centralized local config.
     if (path === '/branding') return send({ error: { code: 'UNAVAILABLE', message: 'Use local branding' } }, 503);
-    if (path === '/health') return send({status:'ok',service:'OnusAI business API',timestamp:'2026-11-27T00:00:00Z'});
+    if (path === '/health') return send({status:'ok',service:'OnusSync business API',timestamp:'2026-11-27T00:00:00Z'});
     if (path === '/health/ready') return send({status:'ok',database:'ready'});
     return send({ status: 'ok' });
   });

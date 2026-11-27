@@ -46,8 +46,8 @@ with patch.dict(
 def sign_test_token(
     *,
     secret: str = TEST_INTERNAL_SECRET,
-    issuer: str = "onusai-backend",
-    audience: str = "onusai-ai-backend",
+    issuer: str = "onussync-backend",
+    audience: str = "onussync-ai-backend",
     subject: str = "service:backend",
     scope: str = "ai:health",
     issued_at: int | None = None,

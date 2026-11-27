@@ -1,4 +1,4 @@
-# OnusAI Incremental Implementation Roadmap
+# OnusSync Incremental Implementation Roadmap
 
 Status: reorganized backend-first, AI-first plan (27 November 2026). This plan preserves all existing requirements (`FR-01`–`FR-16`), verified foundations, architecture boundaries, technology stack, and pending features. Completed status is recorded only where verified in [PROGRESS.md](PROGRESS.md); incomplete work remains explicitly marked as pending. A separate `dashboard/` scaffold that appeared earlier remains unverified and is deferred to Phase 11 for inspection and reconciliation.
 

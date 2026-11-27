@@ -27,13 +27,13 @@ class SettingsTests(unittest.TestCase):
             gemini_api_key=TEST_GEMINI_KEY,
         )
 
-        self.assertEqual(settings.app_name, "OnusAI AI Service")
+        self.assertEqual(settings.app_name, "OnusSync AI Service")
         self.assertEqual(settings.log_level, "INFO")
         self.assertEqual(
             settings.internal_auth_secret.get_secret_value(), TEST_INTERNAL_SECRET
         )
-        self.assertEqual(settings.internal_auth_issuer, "onusai-backend")
-        self.assertEqual(settings.internal_auth_audience, "onusai-ai-backend")
+        self.assertEqual(settings.internal_auth_issuer, "onussync-backend")
+        self.assertEqual(settings.internal_auth_audience, "onussync-ai-backend")
         self.assertEqual(settings.internal_auth_max_ttl_seconds, 300)
         self.assertEqual(settings.internal_auth_clock_skew_seconds, 0)
         self.assertEqual(settings.internal_max_request_bytes, 262_144)
@@ -154,13 +154,13 @@ class SettingsTests(unittest.TestCase):
 
         settings = Settings(_env_file=None)
 
-        self.assertEqual(settings.app_name, "OnusAI AI Service")
+        self.assertEqual(settings.app_name, "OnusSync AI Service")
         self.assertEqual(settings.log_level, "INFO")
 
     def test_example_configuration_loads(self) -> None:
         settings = Settings(_env_file=SERVICE_DIRECTORY / ".env.example")
 
-        self.assertEqual(settings.app_name, "OnusAI AI Service")
+        self.assertEqual(settings.app_name, "OnusSync AI Service")
         self.assertEqual(settings.log_level, "INFO")
         self.assertEqual(settings.generation_mode, "gemini")
         self.assertEqual(settings.gemini_model, "gemini-2.5-flash-lite")

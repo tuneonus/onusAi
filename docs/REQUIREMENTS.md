@@ -1,10 +1,10 @@
-# OnusAI Product Requirements
+# OnusSync Product Requirements
 
 Status: planned requirements, not implemented capabilities. Phase 00 — Step 03, 27 November 2026.
 
 ## Purpose and scope
 
-OnusAI is a standalone AI Business Engagement Platform for configurable business-specific assistants, customer engagement, lead generation, appointment booking, and intelligent automation. The immediate objective is a professional working product that supports practical AI Engineering learning and technical interviews.
+OnusSync is a standalone AI-Powered Multi-Tenant Business Engagement Platform for configurable business-specific assistants, customer engagement, lead generation, appointment booking, and intelligent automation. The immediate objective is a professional working product that supports practical AI Engineering learning and technical interviews.
 
 The interview MVP is a deliberately small end-to-end product: two isolated demonstration businesses, business configuration, a document-grounded assistant, a playground and widget, persistent conversations, consent-based leads, and a controlled appointment workflow. It will demonstrate one LLM provider, one vector database, one business database, and one explicit agent workflow. It is not a promise of commercial readiness.
 

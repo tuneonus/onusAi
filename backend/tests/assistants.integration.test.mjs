@@ -22,7 +22,7 @@ test('live versioned assistant configuration, tool scopes, knowledge visibility,
   skip: !databaseUrl,
   timeout: 45_000,
 }, async (t) => {
-  const schema = `onusai_asst_test_${randomUUID().replaceAll('-', '')}`;
+  const schema = `onussync_asst_test_${randomUUID().replaceAll('-', '')}`;
   const observer = new Pool({
     connectionString: databaseUrl,
     connectionTimeoutMillis: 2000,
@@ -151,7 +151,7 @@ test('live versioned assistant configuration, tool scopes, knowledge visibility,
     const cookies = extractCookies(res);
     const body = await res.json();
     return {
-      cookie: `onusai_session=${cookies.onusai_session}; onusai_csrf=${cookies.onusai_csrf}`,
+      cookie: `onussync_session=${cookies.onussync_session}; onussync_csrf=${cookies.onussync_csrf}`,
       csrf: body.session.csrfToken,
     };
   }
@@ -182,7 +182,7 @@ test('live versioned assistant configuration, tool scopes, knowledge visibility,
     const brandRes = await fetch(`${baseUrl}/api/v1/branding`);
     assert.equal(brandRes.status, 200);
     const brandBody = await brandRes.json();
-    assert.equal(brandBody.productName, 'OnusAI');
+    assert.equal(brandBody.productName, 'OnusSync');
 
     // Approved tool registry is readable by staff.
     const toolsRes = await fetch(`${baseUrl}/api/v1/businesses/${alphaBusinessId}/assistants/tools`, {

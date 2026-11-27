@@ -1,4 +1,4 @@
-# OnusAI Technical Interview Coverage
+# OnusSync Technical Interview Coverage
 
 Status: preparation plan, not a claim of implemented features or demonstrated proficiency. Phase 00 — Step 03, 27 November 2026.
 

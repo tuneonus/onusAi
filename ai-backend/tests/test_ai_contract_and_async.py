@@ -61,8 +61,8 @@ class ContractFixtureTests(unittest.TestCase):
             }
         )
         auth = InternalServiceContext(
-            issuer="onusai-backend",
-            audience="onusai-ai-backend",
+            issuer="onussync-backend",
+            audience="onussync-ai-backend",
             subject="service:backend",
             token_id="fixture-1",
             scopes=frozenset({"ai:respond"}),

@@ -11,7 +11,7 @@ process.env.CORS_ORIGIN = 'http://localhost:5173';
 process.env.AI_SERVICE_URL = 'http://127.0.0.1:8001';
 process.env.AI_SERVICE_TIMEOUT_MS = '5000';
 process.env.AI_INTERNAL_AUTH_SECRET = aiInternalAuthSecret;
-const databaseUrl = 'postgresql://test:example-password@127.0.0.1:5433/onusai';
+const databaseUrl = 'postgresql://test:example-password@127.0.0.1:5433/onussync';
 process.env.DATABASE_URL = databaseUrl;
 process.env.DATABASE_CONNECTION_TIMEOUT_MS = '5000';
 process.env.DATABASE_IDLE_TIMEOUT_MS = '30000';
@@ -29,7 +29,7 @@ test('unspecified optional settings receive safe development defaults', () => {
     port: 3000, nodeEnv: 'development', corsOrigins: ['http://localhost:5173'],
     aiServiceUrl: 'http://127.0.0.1:8001', aiServiceTimeoutMs: 5000,
     aiInternalAuthSecret, aiInternalAuthTokenTtlSeconds: 60,
-    aiInternalAuthIssuer: 'onusai-backend', aiInternalAuthAudience: 'onusai-ai-backend',
+    aiInternalAuthIssuer: 'onussync-backend', aiInternalAuthAudience: 'onussync-ai-backend',
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
     databaseQueryTimeoutMs: 5000, authSessionTtlMs: 28_800_000,
     authLoginMaxAttempts: 5, authLoginWindowMs: 900_000, authLoginLockoutMs: 900_000,

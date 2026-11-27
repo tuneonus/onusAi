@@ -1,6 +1,6 @@
-# OnusAI Dashboard
+# OnusSync Dashboard
 
-React + TypeScript + Vite staff dashboard for the OnusAI AI Business Engagement Platform.
+React + TypeScript + Vite staff dashboard for the OnusSync AI-Powered Multi-Tenant Business Engagement Platform.
 
 See [FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md) for the folder structure, layer responsibilities, coding conventions, and step-by-step implementation plan.
 

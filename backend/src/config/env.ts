@@ -90,13 +90,13 @@ export function validateEnv(values: NodeJS.ProcessEnv) {
   const aiInternalAuthIssuer = nonEmptyBoundedString(
     values,
     'AI_INTERNAL_AUTH_ISSUER',
-    'onusai-backend',
+    'onussync-backend',
     100,
   );
   const aiInternalAuthAudience = nonEmptyBoundedString(
     values,
     'AI_INTERNAL_AUTH_AUDIENCE',
-    'onusai-ai-backend',
+    'onussync-ai-backend',
     100,
   );
 

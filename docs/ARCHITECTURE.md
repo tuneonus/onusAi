@@ -1,4 +1,4 @@
-# OnusAI System Architecture
+# OnusSync System Architecture
 
 Status: proposed target architecture, not a deployed system. Phase 00 — Step 03, 27 November 2026. Foundation files and this documentation are the verified scope. A dashboard scaffold appeared during this step outside the documentation changes; it is preserved but not reviewed, run, or counted as completion of the planned application phases.
 
@@ -6,7 +6,7 @@ Status: proposed target architecture, not a deployed system. Phase 00 — Step 0
 
 Start with two modular services: Node.js for business operations and FastAPI for AI operations. Keep each internally simple; do not introduce a service per feature, an API gateway product, a message broker, or a general plugin platform. Add planned components only at the roadmap step that needs them.
 
-The design decisions below are OnusAI proposals. They do not describe another product's internal architecture.
+The design decisions below are OnusSync proposals. They do not describe another product's internal architecture.
 
 ## Application and service responsibilities
 
@@ -100,7 +100,7 @@ The AI service receives only approved tool schemas. Gemini may propose a tool na
 
 PostgreSQL [transactions](https://www.postgresql.org/docs/current/tutorial-transactions.html) support the proposed all-or-nothing booking operation. Start with fixed-duration slots and a tenant/resource/slot uniqueness constraint; perform confirmation and audit/idempotency updates transactionally. Expiry and approval checks occur inside the final business operation. Variable-length scheduling is deferred.
 
-For tenant isolation, use explicit application filters and tenant-consistent constraints from the first persisted feature. Add and test PostgreSQL [row-level security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) as defense in depth before public release; account for privileged roles and table-owner bypass behavior rather than assuming RLS applies automatically. Qdrant [multitenancy](https://qdrant.tech/documentation/manage-data/multitenancy/) and [payload filtering](https://qdrant.tech/documentation/search/filtering/) support scoped vector access, but OnusAI must enforce filters on every code path.
+For tenant isolation, use explicit application filters and tenant-consistent constraints from the first persisted feature. Add and test PostgreSQL [row-level security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) as defense in depth before public release; account for privileged roles and table-owner bypass behavior rather than assuming RLS applies automatically. Qdrant [multitenancy](https://qdrant.tech/documentation/manage-data/multitenancy/) and [payload filtering](https://qdrant.tech/documentation/search/filtering/) support scoped vector access, but OnusSync must enforce filters on every code path.
 
 ## Document ingestion and RAG data flow
 
@@ -195,7 +195,7 @@ Human handoff is also distinct from a tool approval: it changes conversation own
 
 - Add exact caching before semantic caching. Redis is a disposable key/value cache and shared counter store; see its [data types](https://redis.io/docs/latest/develop/data-types/). Use TTLs, bounded entry sizes, invalidation, and concurrency-safe rate-limit updates.
 - Exact keys include tenant, assistant, audience/permission scope, location, configuration/knowledge/model/prompt versions, and relevant conversation state. Never share private answers between tenants or visitor sessions.
-- For semantic caching, reuse Qdrant for a separate scoped cache-vector collection and store answer values/expiry in Redis. This is an OnusAI design proposal, not a requirement for Redis vector features or another vector database.
+- For semantic caching, reuse Qdrant for a separate scoped cache-vector collection and store answer values/expiry in Redis. This is an OnusSync design proposal, not a requirement for Redis vector features or another vector database.
 - Cache only public, non-personalized informational answers after evaluation. Require compatible scope/version filters, a measured similarity threshold, live Redis TTL, and current source authorization. Dynamic availability, leads, bookings, approvals, and tool results bypass semantic caching.
 - Deletion/version changes invalidate entries and their semantic candidates. Redis misses/outages trigger safe recomputation; sensitive public endpoints fail closed if enforceable shared rate limiting is unavailable. Do not silently permit unlimited model or write calls.
 

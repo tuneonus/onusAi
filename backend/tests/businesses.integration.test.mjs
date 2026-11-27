@@ -32,7 +32,7 @@ test('live business profile and location CRUD, validation, CSRF, RBAC, and tenan
   skip: !databaseUrl,
   timeout: 45_000,
 }, async (t) => {
-  const schema = `onusai_biz_test_${randomUUID().replaceAll('-', '')}`;
+  const schema = `onussync_biz_test_${randomUUID().replaceAll('-', '')}`;
   const observer = new Pool({
     connectionString: databaseUrl,
     connectionTimeoutMillis: 2000,
@@ -142,7 +142,7 @@ test('live business profile and location CRUD, validation, CSRF, RBAC, and tenan
     const cookies = extractCookies(res);
     const body = await res.json();
     return {
-      cookie: `onusai_session=${cookies.onusai_session}; onusai_csrf=${cookies.onusai_csrf}`,
+      cookie: `onussync_session=${cookies.onussync_session}; onussync_csrf=${cookies.onussync_csrf}`,
       csrf: body.session.csrfToken,
     };
   }

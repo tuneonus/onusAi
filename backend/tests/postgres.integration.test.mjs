@@ -94,7 +94,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     skip: !databaseUrl, timeout: 10_000,
   }, async (t) => {
     const url = new URL(databaseUrl);
-    const applicationName = `onusai-shutdown-test-${process.pid}-${signal}`;
+    const applicationName = `onussync-shutdown-test-${process.pid}-${signal}`;
     url.searchParams.set('application_name', applicationName);
     const observer = new Pool({
       connectionString: databaseUrl, connectionTimeoutMillis: 1000,

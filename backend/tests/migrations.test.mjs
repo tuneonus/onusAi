@@ -10,7 +10,7 @@ Object.assign(process.env, {
   PORT: '3000', NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173',
   AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
   AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
-  DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+  DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onussync',
   DATABASE_CONNECTION_TIMEOUT_MS: '5000', DATABASE_IDLE_TIMEOUT_MS: '30000',
   DATABASE_QUERY_TIMEOUT_MS: '5000',
 });
@@ -19,7 +19,7 @@ const { loadMigrationFiles, MigrationError, runMigrations } = await import('../d
 const { postgresPool, closeDatabasePool } = await import('../dist/integrations/database/postgres.js');
 
 async function fixture(t, files) {
-  const directory = await mkdtemp(join(tmpdir(), 'onusai-migration-unit-'));
+  const directory = await mkdtemp(join(tmpdir(), 'onussync-migration-unit-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   for (const [filename, contents] of Object.entries(files)) {
     await writeFile(join(directory, filename), contents);

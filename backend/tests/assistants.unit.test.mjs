@@ -8,7 +8,7 @@ Object.assign(process.env, {
   AI_SERVICE_URL: 'http://127.0.0.1:8001',
   AI_SERVICE_TIMEOUT_MS: '5000',
   AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
-  DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+  DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onussync',
   DATABASE_CONNECTION_TIMEOUT_MS: '5000',
   DATABASE_IDLE_TIMEOUT_MS: '30000',
   DATABASE_QUERY_TIMEOUT_MS: '5000',
@@ -32,7 +32,7 @@ const sampleLocationId = '550e8400-e29b-41d4-a716-446655440000';
 
 test('centralized branding package is shared with backend without duplicate literals', () => {
   assert.deepEqual(branding, publicBranding);
-  assert.equal(branding.productName, 'OnusAI');
+  assert.equal(branding.productName, 'OnusSync');
   assert.ok(branding.tagline.length > 0);
   assert.ok(branding.attributionText.includes(branding.productName));
 });

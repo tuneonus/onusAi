@@ -1,4 +1,4 @@
-# OnusAI Progress Record
+# OnusSync Progress Record
 
 Last updated: 27 November 2026 (Asia/Kolkata). This record separates repository work, verification, and learning. Planned architecture does not imply implemented functionality.
 
@@ -413,8 +413,8 @@ Implemented roadmap step 04.02 using only existing Node.js/Express/PostgreSQL de
 
 ### Authentication flow, API contracts, and security decisions
 
-1. **Authentication (`POST /api/v1/auth/login`)**: Validates `{ email, password }` strictly (rejects unexpected keys), checks hashed `email:` and `ip:` lockouts in `auth_login_attempts` (`429 TOO_MANY_LOGIN_ATTEMPTS` + `Retry-After`), verifies password via `crypto.scrypt` (running `verifyDummyPassword` for missing accounts), returns generic `401 INVALID_CREDENTIALS` on mismatch while atomically incrementing failure windows, and on success clears email failures, creates a `staff_sessions` row with SHA-256 hashes only, sets `onusai_session` (`HttpOnly`, `SameSite=Lax`, `Path=/api/v1`, `Secure` when `NODE_ENV=production`) and `onusai_csrf` (`SameSite=Lax`, `Path=/`, `Secure` when `NODE_ENV=production`), and returns `{ user, memberships, session: { expiresAt, csrfToken } }` with `Cache-Control: no-store`.
-2. **Session inspection (`GET /api/v1/auth/me`) and logout (`POST /api/v1/auth/logout`)**: `requireAuth` hashes `onusai_session`, requires an unrevoked non-expired row in `staff_sessions`, clears cookies and returns `401 AUTHENTICATION_REQUIRED` otherwise. `GET /api/v1/auth/me` returns verified `user`, `memberships`, and `session` (echoing `csrfToken` only if the `onusai_csrf` cookie matches `csrf_token_hash`). `POST /api/v1/auth/logout` enforces `requireAuth` + `requireCsrf` (`X-CSRF-Token` matched against `csrf_token_hash` via `timingSafeEqual`), sets `revoked_at`, and clears cookies.
+1. **Authentication (`POST /api/v1/auth/login`)**: Validates `{ email, password }` strictly (rejects unexpected keys), checks hashed `email:` and `ip:` lockouts in `auth_login_attempts` (`429 TOO_MANY_LOGIN_ATTEMPTS` + `Retry-After`), verifies password via `crypto.scrypt` (running `verifyDummyPassword` for missing accounts), returns generic `401 INVALID_CREDENTIALS` on mismatch while atomically incrementing failure windows, and on success clears email failures, creates a `staff_sessions` row with SHA-256 hashes only, sets `onussync_session` (`HttpOnly`, `SameSite=Lax`, `Path=/api/v1`, `Secure` when `NODE_ENV=production`) and `onussync_csrf` (`SameSite=Lax`, `Path=/`, `Secure` when `NODE_ENV=production`), and returns `{ user, memberships, session: { expiresAt, csrfToken } }` with `Cache-Control: no-store`.
+2. **Session inspection (`GET /api/v1/auth/me`) and logout (`POST /api/v1/auth/logout`)**: `requireAuth` hashes `onussync_session`, requires an unrevoked non-expired row in `staff_sessions`, clears cookies and returns `401 AUTHENTICATION_REQUIRED` otherwise. `GET /api/v1/auth/me` returns verified `user`, `memberships`, and `session` (echoing `csrfToken` only if the `onussync_csrf` cookie matches `csrf_token_hash`). `POST /api/v1/auth/logout` enforces `requireAuth` + `requireCsrf` (`X-CSRF-Token` matched against `csrf_token_hash` via `timingSafeEqual`), sets `revoked_at`, and clears cookies.
 3. **Tenant-aware access (`GET /api/v1/businesses`, `/:businessId`, `/:businessId/locations`, `/:businessId/members`)**: Every tenant route requires `requireAuth` followed by `requireTenantMembership`. `:businessId` is UUID-validated and joined with `req.auth.user.id` in `business_members`; client-supplied headers/query/body roles or tenant IDs are never trusted. Non-members and unknown business UUIDs both receive `403 TENANT_ACCESS_DENIED`; operators requesting owner-only `GET /:businessId/members` receive `403 INSUFFICIENT_PERMISSIONS`.
 4. **Configuration**: `AUTH_SESSION_TTL_MS` (default `28800000`, 1s–30d), `AUTH_LOGIN_MAX_ATTEMPTS` (default `5`, 1–100), `AUTH_LOGIN_WINDOW_MS` (default `900000`, 1s–24h), `AUTH_LOGIN_LOCKOUT_MS` (default `900000`, 1s–24h).
 
@@ -456,7 +456,7 @@ Implemented roadmap step `04.03` (FR-01 and FR-03) using existing Node.js/Expres
 
 ### API contracts and permissions
 
-All routes are mounted under `/api/v1/businesses`, require a valid `onusai_session` cookie (`401 AUTHENTICATION_REQUIRED`), enforce `X-CSRF-Token` on `POST`/`PATCH`/`DELETE` (`403 CSRF_TOKEN_INVALID`), and return `Cache-Control: no-store`.
+All routes are mounted under `/api/v1/businesses`, require a valid `onussync_session` cookie (`401 AUTHENTICATION_REQUIRED`), enforce `X-CSRF-Token` on `POST`/`PATCH`/`DELETE` (`403 CSRF_TOKEN_INVALID`), and return `Cache-Control: no-store`.
 
 | Method & Path | Access | Behavior & key responses |
 | --- | --- | --- |
@@ -492,7 +492,7 @@ Implemented roadmap step `04.04` (FR-04 and `packages/` public branding) without
 - **Immutable version lifecycle & concurrency-safe publishing**: Each assistant starts with draft `v1` and supports draft creation (`POST .../versions`), draft editing (`PATCH .../versions/:versionId`), version history (`GET .../versions`), and transactional publishing (`POST .../versions/:versionId/publish`). Publishing acquires `FOR UPDATE` on the parent `assistants` row, verifies draft status and active location references, supersedes any prior published version, and relies on partial unique indexes plus PostgreSQL immutability triggers (`enforce_assistant_version_immutability`, `enforce_assistant_knowledge_locations_draft`) to prevent race conditions or post-publish edits.
 - **Tool scopes (deny by default)**: `allowedTools` defaults to `[]` and validates against `APPROVED_TOOL_REGISTRY` (`lookup_availability`, `request_lead_capture`, `request_appointment_booking`, `request_human_handoff`); unapproved tool IDs fail with `400 UNAPPROVED_TOOL_SCOPE`.
 - **Knowledge visibility settings**: Stores `allowedKnowledgeScopes` (subset of `'public' | 'staff_only'`, defaulting to `['public']`), `knowledgeLocationScope` (`'business_wide' | 'assigned_location' | 'selected_locations'`), and tenant-verified `knowledgeLocationIds` backed by `assistant_version_knowledge_locations` composite foreign keys.
-- **Centralized public branding**: `packages/branding/` (`branding.json`, `index.js`, `index.d.ts`) is the single source of truth for OnusAI platform branding (`productName`, `shortName`, `tagline`, `attributionText`), consumed by `backend/src/config/branding.ts` and exposed via `GET /api/v1/branding`, kept strictly separate from per-tenant assistant branding (`displayName`, `welcomeMessage`, `tone`, `description`). `toPublicAssistantProfile` omits private `systemInstructions`, `modelSettings`, `allowedTools`, and `allowedKnowledgeScopes`.
+- **Centralized public branding**: `packages/branding/` (`branding.json`, `index.js`, `index.d.ts`) is the single source of truth for OnusSync platform branding (`productName`, `shortName`, `tagline`, `attributionText`), consumed by `backend/src/config/branding.ts` and exposed via `GET /api/v1/branding`, kept strictly separate from per-tenant assistant branding (`displayName`, `welcomeMessage`, `tone`, `description`). `toPublicAssistantProfile` omits private `systemInstructions`, `modelSettings`, `allowedTools`, and `allowedKnowledgeScopes`.
 
 ### New and updated files
 
@@ -509,7 +509,7 @@ Implemented roadmap step `04.04` (FR-04 and `packages/` public branding) without
 
 ### API contracts and permissions
 
-All assistant endpoints live under `/api/v1/businesses/:businessId/assistants`, require `onusai_session` (`401`), enforce `X-CSRF-Token` on mutations (`403`), and return `Cache-Control: no-store`.
+All assistant endpoints live under `/api/v1/businesses/:businessId/assistants`, require `onussync_session` (`401`), enforce `X-CSRF-Token` on mutations (`403`), and return `Cache-Control: no-store`.
 
 | Method & Path | Access | Behavior & key responses |
 | --- | --- | --- |
@@ -561,7 +561,7 @@ Implemented roadmap step `04.05` (FR-08 persistence, deterministic ordering, pag
 
 ### API contracts and permissions
 
-All conversation endpoints live under `/api/v1/businesses/:businessId/conversations`, require `onusai_session` (`401`), enforce `X-CSRF-Token` on mutations (`403`), and return `Cache-Control: no-store`.
+All conversation endpoints live under `/api/v1/businesses/:businessId/conversations`, require `onussync_session` (`401`), enforce `X-CSRF-Token` on mutations (`403`), and return `Cache-Control: no-store`.
 
 | Method & Path | Access | Behavior & key responses |
 | --- | --- | --- |
@@ -595,7 +595,7 @@ Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Lea
 
 1. **Roadmap reorganization (`docs/ROADMAP.md`, `docs/JD_COVERAGE.md`)**: Reordered remaining unstarted work after Phase `04` using a backend-first, AI-first, dependency-based sequence so internal auth, LLM integration (`Phase 03`), document ingestion (`Phase 05`), RAG/Qdrant (`Phase 06`), LangChain/tools (`Phase 07`), LangGraph/HITL (`Phase 08`), Redis/MCP/webhooks (`Phase 09`), and LangSmith/eval/analytics (`Phase 10`) precede frontend applications (`Phase 11` React dashboard, `Phase 12` chat widget/demo). Preserved all `FR-01`–`FR-16` requirements, tech stack, verified steps, and pending statuses without marking incomplete items complete.
 2. **Authentication mechanism (`HS256` short-lived signed JWT)**: Selected dependency-free `HMAC-SHA256` JWTs signed by Node.js (`node:crypto`) and verified in Python (`hmac`, `hashlib`, `base64`, `json`), avoiding third-party JWT libraries and keeping zero new runtime dependencies. A static pre-shared bearer key was rejected because short-lived signed tokens enforce bounded expiration (`iat`/`exp`), issuer/audience binding (`iss`/`aud`), unique token IDs (`jti`), and per-route scopes (`scope`) while preparing directly for scoped tenant/delegation claims in `03.02`.
-3. **Configuration validation (fail-closed)**: Both services require `AI_INTERNAL_AUTH_SECRET` (>= 32 characters, no surrounding whitespace, no hardcoded default in code), `AI_INTERNAL_AUTH_ISSUER` (default `onusai-backend`), and `AI_INTERNAL_AUTH_AUDIENCE` (default `onusai-ai-backend`). Node.js bounds `AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS` (`1`–`300`, default `60`); FastAPI bounds `AI_INTERNAL_AUTH_MAX_TTL_SECONDS` (`1`–`3600`, default `300`) and `AI_INTERNAL_AUTH_CLOCK_SKEW_SECONDS` (`0`–`60`, default `0`), storing the secret as Pydantic `SecretStr` and rejecting invalid configs without echoing secret values.
+3. **Configuration validation (fail-closed)**: Both services require `AI_INTERNAL_AUTH_SECRET` (>= 32 characters, no surrounding whitespace, no hardcoded default in code), `AI_INTERNAL_AUTH_ISSUER` (default `onussync-backend`), and `AI_INTERNAL_AUTH_AUDIENCE` (default `onussync-ai-backend`). Node.js bounds `AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS` (`1`–`300`, default `60`); FastAPI bounds `AI_INTERNAL_AUTH_MAX_TTL_SECONDS` (`1`–`3600`, default `300`) and `AI_INTERNAL_AUTH_CLOCK_SKEW_SECONDS` (`0`–`60`, default `0`), storing the secret as Pydantic `SecretStr` and rejecting invalid configs without echoing secret values.
 4. **Protected boundary and safe errors**: FastAPI keeps `GET /api/v1/health` as unauthenticated process liveness and adds `GET /api/v1/internal/health` protected by `require_internal_service_auth("ai:health")` returning `Cache-Control: no-store`. Missing, malformed, unsupported-algorithm (`alg != HS256` / `typ != JWT`), invalid-signature, invalid-claim, or expired tokens return `401` (`WWW-Authenticate: Bearer`) without secret/token leakage; valid tokens missing the required scope return `403`. Node.js `getAiHealth()` signs a fresh `ai:health` token for `/api/v1/internal/health` and maps upstream `401`/`403` to `502 AI_SERVICE_AUTH_FAILED` without logging tokens or upstream error bodies.
 
 ### New and updated files
@@ -745,3 +745,47 @@ After an implementation step, record: what the developer can explain, a design a
 ## Approval boundary
 
 Stop after reporting the verified Step `03.04` live baseline and Phase `03` completion review. Await explicit user approval for Git commit/push or starting Phase `05` (`05.01` — Text/Markdown upload metadata and bounded text storage with version/state transitions). Completing Phase `03` does not authorize Phase `05`.
+
+## Project Rebranding to OnusSync — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Scope: **branding-only rename from OnusAI to OnusSync**.
+
+### Summary of changes
+
+- **Centralized branding (`packages/branding/branding.json`)**: Updated `productName` and `shortName` to `OnusSync`, `tagline` to `AI-Powered Multi-Tenant Business Engagement Platform`, and `attributionText` to `Powered by OnusSync`.
+- **Root & infrastructure config (`AGENTS.md`, `README.md`, `compose.yaml`)**: Updated project naming, naming standards (`onussync`, `ONUSSYNC_`, `onussync@gmail.com`), and default Docker Compose PostgreSQL service credentials (`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`).
+- **Node.js backend (`backend/`)**: Updated `AI_INTERNAL_AUTH_ISSUER` (`onussync-backend`), `AI_INTERNAL_AUTH_AUDIENCE` (`onussync-ai-backend`), cookie names (`onussync_session`, `onussync_csrf`), `.env.example`, and all unit/integration tests including the cross-language HS256 JWT fixture.
+- **Python AI backend (`ai-backend/`)**: Updated `AI_APP_NAME` (`OnusSync AI Service`), `internal_auth_issuer`, `internal_auth_audience`, `.env.example`, and all unit tests including the cross-language HS256 JWT fixture.
+- **Staff dashboard (`dashboard/`)**: Updated `index.html` title (`OnusSync Dashboard`), storage/event keys (`onussync_active_business_id`, `onussync_dashboard_theme`, `onussync:guarded-action`, `onussync_csrf`), CSS/README/architecture docs, and unit/browser test files.
+- **Documentation & datasets (`docs/`, `Resources/OnusAI_Complete_Datasets/README.md`)**: Updated project documentation headers/prose and dataset README branding while preserving all SQL migrations (`0001`–`0015`), fictional hotel names, tenant IDs, and dataset records.
+
+### Verification results
+
+- `cd backend && npm run db:migrate`: **Database migrations are up to date** against `onussync` (`0001`–`0015` verified with matching checksums).
+- `cd backend && set -a && . ./.env && set +a && export TEST_DATABASE_URL="$DATABASE_URL" && npm run typecheck && npm test`: **128 passed, 0 failed, 0 skipped** (includes live PostgreSQL integration tests on `onussync` and live Node.js-to-FastAPI internal auth).
+- `cd ai-backend && .venv/bin/python -m unittest discover -s tests -v`: **42 passed, 0 failed**.
+- `cd dashboard && npm run build && npm run lint && npm test`: **build clean, lint clean, 47 passed, 0 failed**.
+
+### Compatibility & intentionally retained references
+
+- **PostgreSQL & Docker Compose alignment**: Created role `onussync` (`SUPERUSER`) and database `onussync` via `CREATE DATABASE onussync WITH TEMPLATE onusai OWNER onussync` on the running PostgreSQL instance (`127.0.0.1:5433`) without deleting volumes or losing data. The original `onusai` role and `onusai` database remain intact, `onussync` preserves all 15 `schema_migrations` rows and existing records, and `backend/.env` `DATABASE_URL` now points to `postgresql://onussync:onussync_local_dev@127.0.0.1:5433/onussync`.
+- **Internal auth & branding consistency**: `backend` and `ai-backend` share `onussync-backend` (issuer), `onussync-ai-backend` (audience), and matching `AI_INTERNAL_AUTH_SECRET`. Cookie names (`onussync_session`, `onussync_csrf`), dashboard storage/event keys (`onussync_*`), and `packages/branding/branding.json` (`OnusSync`) are aligned.
+- **Completed roadmap steps & current phase**: Phases `00` (`00.01`–`00.03`), `01` (`01.01`–`01.03`), `02` (`02.01`–`02.03`), `03` (`03.01`–`03.04`), and `04` (`04.01`–`04.05`, migrations `0001`–`0015`) are verified complete. The next proposed step is **Phase `05` — Step `05.01`** (awaiting explicit user approval).
+- `docs/PROGRESS.md`: Historical command-log lines (such as earlier `TEST_DATABASE_URL` / `DATABASE_URL` examples and the historical note about the initial `# onusAi` line in `README.md`) remain as historical records.
+- `Resources/OnusAI_Complete_Datasets/` directory name and `Resources/OnusAI_Complete_Datasets.zip` archive: Untracked external dataset bundle retained intact.
+
+### Remaining manual tasks
+
+- Rename the physical project root directory (`OnusAi` → `OnusSync` or `onussync`) if desired.
+- Rename the GitHub repository (`https://github.com/onussync/OnusSync.git` is already configured as `origin`).
+- Run Docker commands locally as a user with Docker socket access when needed (e.g., `docker compose ps`, `docker compose up -d`, or `docker compose logs postgres`).
+- Review and stage/commit the changes when ready.
+
+### Final rebranding verification pass
+
+- **PostgreSQL & Docker Compose**: Verified live connection to `onussync` as role `onussync` on `127.0.0.1:5433` with all `15` `schema_migrations` (`0001_create_users.sql`–`0015_create_conversation_messages.sql`) preserved; `onusai` role and database remain intact without volume deletion. Docker CLI (`docker ps -a`, `docker volume ls`, `docker compose ps`) could not run in this session due to `/var/run/docker.sock` permission denial.
+- **Repository-wide reference check**: Case-insensitive `grep` for `onusai`, `onus_ai`, and `onus-ai` (excluding `.git`, `node_modules`, `.venv`, `dist`, `Resources/`, and `__pycache__`) found only intentional historical notes in `docs/PROGRESS.md`.
+- **Regression suites**:
+  - `backend`: `npm run db:migrate` (`Database migrations are up to date.`), `npm run typecheck` (clean), `npm test` with `TEST_DATABASE_URL="$DATABASE_URL"` (**128 passed, 0 failed, 0 skipped**).
+  - `ai-backend`: `.venv/bin/python -m unittest discover -s tests -v` (**42 passed, 0 failed**), `compileall` clean, `pip check` (`No broken requirements found.`).
+  - `dashboard`: `npm run build` clean, `npm run lint` clean, `npm test` (**47 passed, 0 failed**). Dashboard browser tests (`dashboard/tests/browser/`) were not executed in this pass.

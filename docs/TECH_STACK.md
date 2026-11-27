@@ -1,10 +1,10 @@
-# OnusAI Technology Decisions
+# OnusSync Technology Decisions
 
 Status: planned selections, not a dependency installation record. Phase 00 — Step 03, 27 November 2026. Git is initialized. This documentation step installs or initializes nothing. A dashboard scaffold and dependencies appeared separately during verification and remain unverified; their presence is not evidence of an approved, working application integration.
 
 ## Selection policy
 
-Use the agreed stack to build one understandable product. Alternatives below support interview comparisons; they are not additional dependencies or commitments. Suitability statements are OnusAI design judgments, not claims that a technology is universally superior. Recheck official documentation, compatible versions, provider availability/terms, and costs at each approved implementation step. No package version or model ID is selected by this document.
+Use the agreed stack to build one understandable product. Alternatives below support interview comparisons; they are not additional dependencies or commitments. Suitability statements are OnusSync design judgments, not claims that a technology is universally superior. Recheck official documentation, compatible versions, provider availability/terms, and costs at each approved implementation step. No package version or model ID is selected by this document.
 
 ## Languages and frontend
 

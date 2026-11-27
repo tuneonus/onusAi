@@ -1,14 +1,14 @@
-# OnusAI
+# OnusSync
 
-OnusAI is an independent AI Business Engagement Platform designed to help businesses answer customer questions, support visitors, and manage engagement through AI-assisted conversations grounded in business knowledge.
+OnusSync is an independent AI-Powered Multi-Tenant Business Engagement Platform designed to help businesses answer customer questions, support visitors, and manage engagement through AI-assisted conversations grounded in business knowledge.
 
-The project combines practical AI Engineering learning, technical interview preparation, and the development of a professional working product. ProManage Merlin AI, Chatbase, Intercom Fin, and Botpress serve as capability references; OnusAI has its own identity and implementation.
+The project combines practical AI Engineering learning, technical interview preparation, and the development of a professional working product. ProManage Merlin AI, Chatbase, Intercom Fin, and Botpress serve as capability references; OnusSync has its own identity and implementation.
 
 ## Business problem and proposed solution
 
 Businesses often spread product information, policies, and support knowledge across multiple sources. Customers need timely, consistent answers, while teams spend time handling repeated questions and maintaining separate engagement channels.
 
-OnusAI aims to bring business knowledge and customer conversations into a managed platform. Planned capabilities include knowledge-grounded AI answers, an embeddable chat experience, business administration, and controlled integrations with business tools. These capabilities will be introduced incrementally, with validation, security, testing, and observability appropriate to each feature.
+OnusSync aims to bring business knowledge and customer conversations into a managed platform. Planned capabilities include knowledge-grounded AI answers, an embeddable chat experience, business administration, and controlled integrations with business tools. These capabilities will be introduced incrementally, with validation, security, testing, and observability appropriate to each feature.
 
 ## Planned applications and services
 
@@ -82,4 +82,7 @@ Git stores its local repository metadata in `.git/`, which is omitted from this 
 Read `AGENTS.md` before making changes. Work proceeds one feature and one approved step at a time. Important commands, dependencies, files, and implementation choices must be explained, and verification results must be reported before a step is declared complete. The next step requires explicit approval.
 
 Environment files and credentials must remain outside version control. The ignore rules permit `.env.example` files throughout the repository; any future examples must contain safe sample values only.
-# onusAi
+
+- Official project email: `onussync@gmail.com`
+- Lowercase identifier: `onussync`
+- Environment variable prefix: `ONUSSYNC_`

@@ -26,15 +26,15 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    app_name: str = Field(default="OnusAI AI Service", min_length=1)
+    app_name: str = Field(default="OnusSync AI Service", min_length=1)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     internal_auth_secret: SecretStr
     internal_auth_issuer: str = Field(
-        default="onusai-backend", min_length=1, max_length=100
+        default="onussync-backend", min_length=1, max_length=100
     )
     internal_auth_audience: str = Field(
-        default="onusai-ai-backend", min_length=1, max_length=100
+        default="onussync-ai-backend", min_length=1, max_length=100
     )
     internal_auth_max_ttl_seconds: int = Field(default=300, ge=1, le=3600)
     internal_auth_clock_skew_seconds: int = Field(default=0, ge=0, le=60)

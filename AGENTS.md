@@ -1,8 +1,8 @@
-# OnusAI Development Instructions
+# OnusSync Development Instructions
 
 ## Project context
 
-OnusAI is an independent AI Business Engagement Platform inspired by ProManage Merlin AI, Chatbase, Intercom Fin, and Botpress. These products are references for capabilities, not sources of branding or proprietary code.
+OnusSync (`onussync`, env prefix `ONUSSYNC_`, contact `onussync@gmail.com`) is an independent AI-Powered Multi-Tenant Business Engagement Platform inspired by ProManage Merlin AI, Chatbase, Intercom Fin, and Botpress. These products are references for capabilities, not sources of branding or proprietary code.
 
 The project has three objectives:
 
@@ -46,7 +46,7 @@ These are planned choices, not instructions to install or initialize them immedi
 - Keep code modular and human-readable without unnecessary abstractions, dependencies, or boilerplate.
 - Introduce infrastructure and frameworks only when required by an approved feature.
 - Maintain centralized branding configuration when application development begins, so the product name can be changed later. Avoid scattering product-name literals throughout application code.
-- Use only OnusAI branding. Do not introduce branding from other projects or reference products.
+- Use only OnusSync branding. Do not introduce branding from other projects or reference products.
 - Explain meaningful design decisions and tradeoffs in a way that supports learning and interview preparation.
 
 ## Security, validation, and testing

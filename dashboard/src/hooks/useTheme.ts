@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 export type ThemePreference = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
 
-const THEME_STORAGE_KEY = 'onusai_dashboard_theme';
+const THEME_STORAGE_KEY = 'onussync_dashboard_theme';
 
 function readStoredPreference(): ThemePreference {
   try {

@@ -23,7 +23,7 @@ test('live conversation & message persistence, ordering, pagination, idempotency
   skip: !databaseUrl,
   timeout: 45_000,
 }, async (t) => {
-  const schema = `onusai_conv_test_${randomUUID().replaceAll('-', '')}`;
+  const schema = `onussync_conv_test_${randomUUID().replaceAll('-', '')}`;
   const observer = new Pool({
     connectionString: databaseUrl,
     connectionTimeoutMillis: 2000,
@@ -197,7 +197,7 @@ test('live conversation & message persistence, ordering, pagination, idempotency
     const cookies = extractCookies(res);
     const body = await res.json();
     return {
-      cookie: `onusai_session=${cookies.onusai_session}; onusai_csrf=${cookies.onusai_csrf}`,
+      cookie: `onussync_session=${cookies.onussync_session}; onussync_csrf=${cookies.onussync_csrf}`,
       csrf: body.session.csrfToken,
     };
   }
