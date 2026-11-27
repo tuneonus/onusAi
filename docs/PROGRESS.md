@@ -24,15 +24,15 @@ Last updated: 27 November 2026 (Asia/Kolkata). This record separates repository 
 | Repository foundation | Verified locally in 00.01/00.02; initial README-only push verified separately |
 | Requirements and design | Documentation verified in 00.03; foundations and health communication verified below, business/AI product features remain planned |
 | Applications | Dashboard scaffold/dependencies observed during verification, outside this step's changes; not reviewed or verified. Other frontend directories remain empty. |
-| Node.js business service | Foundation, native-fetch AI health client, PostgreSQL connection pool, and database readiness endpoint verified. No authentication, stored application data, or business/AI workflows. |
+| Node.js business service | Foundation, native-fetch AI health client, PostgreSQL connection pool/readiness, staff authentication/sessions/CSRF, and tenant-aware owner/operator authorization verified. No public registration, OAuth, business CRUD mutations, or AI workflows yet. |
 | FastAPI service | Foundation verified; its existing `/api/v1/health` is called by Node.js. No Python source changes were required for basic communication. |
-| PostgreSQL | Node.js pool/readiness, SQL migration runner (`backend/src/integrations/database/migrations.ts`, `backend/src/migrate.ts`), `schema_migrations`, and core tenant schema (`users`, `businesses`, `business_members`, `business_locations`, `updated_at` triggers) verified against the running Docker database on host port 5433. No ORM, authentication, or row-level security yet. |
+| PostgreSQL | Node.js pool/readiness, SQL migration runner (`backend/src/integrations/database/migrations.ts`, `backend/src/migrate.ts`), `schema_migrations`, core tenant schema (`users`, `businesses`, `business_members`, `business_locations`), and auth schema (`user_credentials`, `staff_sessions`, `auth_login_attempts`, `updated_at` triggers) verified against the running Docker database on host port 5433. No ORM or row-level security yet. |
 | Qdrant, Redis | Docker readiness previously reported by the user; no application integration added or readiness checks repeated in the PostgreSQL step |
 | Node.js-to-FastAPI communication | Local health contract verified with configurable URL/timeout, runtime response validation, safe errors, and real communication between both backend processes |
 | Gemini, LangChain, LangGraph, MCP, LangSmith | Not integrated; no live-model calls, agents, embeddings, traces, or experiments |
 | Business/AI features | Not implemented: no knowledge ingestion, RAG, widget, conversations, leads, bookings, approvals, or analytics |
 | Centralized branding configuration | Backend product name centralized in `backend/src/config/branding.ts`; AI service title centralized in `Settings.app_name`. Cross-application shared configuration remains planned for 04.04 |
-| Tests | 80 Node.js tests passed with live PostgreSQL checks enabled (0 failed, 0 skipped). Database-independent Node.js run: 61 passed, 5 live integration checks skipped as designed. (16 existing FastAPI tests were verified in the prior step and not re-run here because Python files were unchanged.) |
+| Tests | 94 Node.js tests passed with live PostgreSQL checks enabled (0 failed, 0 skipped). Database-independent Node.js run: 69 passed, 6 live integration checks skipped as designed. (16 existing FastAPI tests were verified in an earlier step and not re-run here because Python files were unchanged.) |
 | Docker, CI/CD, deployment | Existing `compose.yaml` and running data-service containers preserved; application containerization, CI/CD, and public deployment not implemented in this step |
 | Dependencies | PostgreSQL step installed `pg` and development-only `@types/pg` after explicit user approval; backend manifest/lockfile updated. Other existing dependencies preserved. Dashboard dependencies remain unverified. |
 
@@ -384,16 +384,58 @@ Verified results:
 
 Limitations: migrations implement the forward-only schema for roadmap step 04.01 without down-migrations, staff authentication/sessions (`04.02`), business/location CRUD (`04.03`), assistant configuration (`04.04`), conversations (`04.05`), or PostgreSQL row-level security (`13.01`). Learning remains not assessed.
 
+## Staff authentication, sessions, and tenant-aware access (04.02) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and design
+
+Implemented roadmap step 04.02 using only existing Node.js/Express/PostgreSQL dependencies (no new packages installed): `crypto.scrypt` password hashing, opaque server-side sessions stored as SHA-256 hashes, `HttpOnly`/`SameSite=Lax` cookies (`Secure` in production), session-bound CSRF protection, PostgreSQL-backed login brute-force lockouts, authentication and owner/operator tenant-membership middleware, tenant-scoped read endpoints, and a development-only staff provisioning CLI. Public registration, OAuth, password recovery, frontend screens, and step 04.03 CRUD mutations were excluded.
+
+### New and updated files
+
+| File under `backend/` | Responsibility |
+| --- | --- |
+| `database/migrations/0006_create_user_credentials.sql` | Creates `user_credentials` (`user_id` PK/FK `ON DELETE CASCADE`, scrypt-formatted `password_hash`, `password_updated_at`, and `set_updated_at` trigger) while preserving existing `users` rows |
+| `database/migrations/0007_create_staff_sessions.sql` | Creates `staff_sessions` (`token_hash` unique 64-hex SHA-256, `csrf_token_hash` 64-hex SHA-256, `expires_at > created_at`, `revoked_at`, `last_seen_at`, indexes, and `set_updated_at` trigger) |
+| `database/migrations/0008_create_auth_login_attempts.sql` | Creates `auth_login_attempts` (SHA-256 hashed `scope_key`, `failed_attempts`, `window_started_at`, `locked_until`, and `set_updated_at` trigger) |
+| `src/config/env.ts` & `.env.example` | Adds validated `AUTH_SESSION_TTL_MS`, `AUTH_LOGIN_MAX_ATTEMPTS`, `AUTH_LOGIN_WINDOW_MS`, and `AUTH_LOGIN_LOCKOUT_MS` |
+| `src/types/express.d.ts` | Augments `Express.Request` with verified `auth` and `tenant` contexts |
+| `src/utils/password.ts`, `tokens.ts`, `cookies.ts` | `crypto.scrypt` (`N=16384, r=8, p=1`, 16-byte random salt, constant-time verify + dummy timing check), 256-bit `base64url` token generation/SHA-256 comparison, and dependency-free `Cookie` header parsing |
+| `src/utils/http-error.ts` & `src/middlewares/error-handler.ts` | Adds optional safe response headers on `HttpError` (used for `Retry-After` on `429`) |
+| `src/middlewares/auth.ts` & `src/middlewares/tenant.ts` | `requireAuth`, `requireCsrf`, and `requireTenantMembership(allowedRoles?)` |
+| `src/modules/auth/*` | `auth.constants.ts`, `auth.validation.ts`, `auth.repository.ts`, `auth.service.ts`, `auth.controller.ts`, `auth.routes.ts` |
+| `src/modules/businesses/*` | `businesses.repository.ts`, `businesses.service.ts`, `businesses.controller.ts`, `businesses.routes.ts` |
+| `src/app.ts` & `src/routes/index.ts` | Enables `credentials: true` on CORS for allowlisted origins; mounts `/api/v1/auth` and `/api/v1/businesses` |
+| `src/seed-staff.ts` & `package.json` (`db:seed:staff`) | Development-only transactional staff/business/location provisioning via `SEED_*` env vars (blocked when `NODE_ENV=production`) |
+| `tests/auth.unit.test.mjs`, `tests/auth.integration.test.mjs`, and updated `env`/`app`/`migrations.integration` tests | Unit and live PostgreSQL integration tests for crypto, validation, cookies, sessions, CSRF, brute-force lockouts, RBAC, and two-tenant isolation |
+
+### Authentication flow, API contracts, and security decisions
+
+1. **Authentication (`POST /api/v1/auth/login`)**: Validates `{ email, password }` strictly (rejects unexpected keys), checks hashed `email:` and `ip:` lockouts in `auth_login_attempts` (`429 TOO_MANY_LOGIN_ATTEMPTS` + `Retry-After`), verifies password via `crypto.scrypt` (running `verifyDummyPassword` for missing accounts), returns generic `401 INVALID_CREDENTIALS` on mismatch while atomically incrementing failure windows, and on success clears email failures, creates a `staff_sessions` row with SHA-256 hashes only, sets `onusai_session` (`HttpOnly`, `SameSite=Lax`, `Path=/api/v1`, `Secure` when `NODE_ENV=production`) and `onusai_csrf` (`SameSite=Lax`, `Path=/`, `Secure` when `NODE_ENV=production`), and returns `{ user, memberships, session: { expiresAt, csrfToken } }` with `Cache-Control: no-store`.
+2. **Session inspection (`GET /api/v1/auth/me`) and logout (`POST /api/v1/auth/logout`)**: `requireAuth` hashes `onusai_session`, requires an unrevoked non-expired row in `staff_sessions`, clears cookies and returns `401 AUTHENTICATION_REQUIRED` otherwise. `GET /api/v1/auth/me` returns verified `user`, `memberships`, and `session` (echoing `csrfToken` only if the `onusai_csrf` cookie matches `csrf_token_hash`). `POST /api/v1/auth/logout` enforces `requireAuth` + `requireCsrf` (`X-CSRF-Token` matched against `csrf_token_hash` via `timingSafeEqual`), sets `revoked_at`, and clears cookies.
+3. **Tenant-aware access (`GET /api/v1/businesses`, `/:businessId`, `/:businessId/locations`, `/:businessId/members`)**: Every tenant route requires `requireAuth` followed by `requireTenantMembership`. `:businessId` is UUID-validated and joined with `req.auth.user.id` in `business_members`; client-supplied headers/query/body roles or tenant IDs are never trusted. Non-members and unknown business UUIDs both receive `403 TENANT_ACCESS_DENIED`; operators requesting owner-only `GET /:businessId/members` receive `403 INSUFFICIENT_PERMISSIONS`.
+4. **Configuration**: `AUTH_SESSION_TTL_MS` (default `28800000`, 1s–30d), `AUTH_LOGIN_MAX_ATTEMPTS` (default `5`, 1–100), `AUTH_LOGIN_WINDOW_MS` (default `900000`, 1s–24h), `AUTH_LOGIN_LOCKOUT_MS` (default `900000`, 1s–24h).
+
+### Verification evidence
+
+- `npm run typecheck`: passed with 0 errors.
+- Live PostgreSQL `npm test` (`TEST_DATABASE_URL` set): **94 passed, 0 failed, 0 skipped** (covers scrypt hashing, random salts, token/cookie helpers, `Secure` flag in `NODE_ENV=production`, `db:seed:staff` guardrails, login/me/logout, DB hash-only storage, expired/revoked/forged sessions, CSRF enforcement, brute-force lockouts, owner vs operator RBAC, and two-tenant isolation).
+- Database-independent `npm test`: **69 passed, 0 failed, 6 skipped** (live DB suites skip cleanly when `TEST_DATABASE_URL` is unset).
+- `npm run db:migrate` applied `0006`–`0008` to the running Docker PostgreSQL instance (`127.0.0.1:5433`) and confirmed idempotency on re-run (`Database migrations are up to date.`); `public` now contains all 8 tables (`users`, `businesses`, `business_members`, `business_locations`, `user_credentials`, `staff_sessions`, `auth_login_attempts`, `schema_migrations`).
+
+Limitations: no scheduled cleanup job purges expired `staff_sessions`/`auth_login_attempts` rows yet; `req.ip` relies on Express's default `trust proxy = false` (must be explicitly configured if deployed behind a reverse proxy); PostgreSQL row-level security remains planned for `13.01`; no public registration, password reset, MFA, or frontend login UI is implemented.
+
 ## Upcoming phases and next proposed step
 
-The Node.js and FastAPI foundations, basic local health communication, PostgreSQL connection foundation, and PostgreSQL schema/migration system (04.01) are verified in their respective records above. Await user review and approval of the next scope. Remaining roadmap items include staff authentication/sessions and tenant-aware access control (04.02), request correlation IDs/general request validation, the validated mock AI request/response contract, and authenticated service communication. No further feature or model integration is authorized by this record.
+The Node.js and FastAPI foundations, basic local health communication, PostgreSQL connection foundation, core schema/migration system (04.01), and staff authentication/session/tenant-authorization layer (04.02) are verified in their respective records above. Await user review and approval of the next scope. Next roadmap item in Phase 04 is `04.03` (business profile and location CRUD with timezone/hours validation). No further feature, commit, or push is authorized by this record.
 
 | Phase | Planned work | Current state |
 | --- | --- | --- |
 | 01 | Node.js business-service foundation and tests | Approved foundation verified: 01.01 complete; 01.02 error/routing/shutdown portions complete with correlation IDs/general request validation pending; 01.03 foundation tests verified using the built-in runner |
 | 02 | FastAPI AI-service foundation and tests | 02.01 verified with explicitly requested errors/logging/lifespan and proportionate tests; mock contract 02.02 and remaining async-boundary work 02.03 not implemented |
 | 03 | Private backend integration and Gemini baseline | Basic health communication/timeout/error handling verified as the approved subset of 03.01; authentication, delegation, correlation IDs, and Gemini steps remain unimplemented |
-| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | PostgreSQL connectivity/readiness and step 04.01 (migration runner, `schema_migrations`, `users`, `businesses`, `business_members`, `business_locations`, `updated_at` triggers) verified; steps 04.02–04.05 remain unimplemented |
+| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | PostgreSQL connectivity/readiness, step 04.01 (core schema and migrations `0001`–`0005`), and step 04.02 (staff auth, sessions, CSRF, brute-force protection, owner/operator RBAC, tenant-aware access, migrations `0006`–`0008`) verified; steps 04.03–04.05 remain unimplemented |
 | 05 | React dashboard and staff playground | Not verified; separately appearing scaffold must be inspected at the approved step; steps 05.01–05.03 |
 | 06 | Document lifecycle, durable ingestion jobs, and chunking | Not started; steps 06.01–06.03 |
 | 07 | Embeddings, Qdrant, semantic search, and grounded RAG | Not started; steps 07.01–07.05 |
@@ -416,4 +458,4 @@ After an implementation step, record: what the developer can explain, a design a
 
 ## Approval boundary
 
-Stop after reporting the verified PostgreSQL schema and migration system step (04.01). Await explicit user approval for the next scope (such as 04.02 staff sessions and tenant-aware access control), additional dependencies, authentication/model integration, frontend changes, or any commit/push. Completing this step does not authorize the next one.
+Stop after reporting the verified staff authentication, sessions, and tenant-aware access step (04.02). Await explicit user approval for the next scope (such as 04.03 business profile and location CRUD), additional dependencies, AI/model integration, frontend changes, or any commit/push. Completing this step does not authorize the next one.

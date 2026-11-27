@@ -125,7 +125,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
 
   await t.test('a failed first batch rolls back DDL, triggers, and migration history', async (subtest) => {
     const directory = await migrationFixture(subtest);
-    await writeFile(new URL('0006_fail.sql', directory), 'CREATE TABLE bootstrap_probe (id integer); SELECT nonexistent_private_function();');
+    await writeFile(new URL('0009_fail.sql', directory), 'CREATE TABLE bootstrap_probe (id integer); SELECT nonexistent_private_function();');
     await assert.rejects(runMigrations(directory), /Database migrations failed/);
     const result = await postgresPool.query(`
       SELECT count(*)::integer AS count FROM pg_class
@@ -167,7 +167,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
         assert.equal(signal, null);
       }
       const combined = first.output() + second.output();
-      assert.equal(combined.match(/Applied migration:/g)?.length, 5);
+      assert.equal(combined.match(/Applied migration:/g)?.length, 8);
       assert.match(combined, /Database migrations are up to date/);
       assert.ok(!combined.includes(scopedUrl.href));
       if (scopedUrl.password) assert.ok(!combined.includes(scopedUrl.password));
@@ -176,7 +176,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       lock.release();
     }
     const versions = await postgresPool.query('SELECT version FROM schema_migrations ORDER BY version');
-    assert.deepEqual(versions.rows.map((row) => row.version), [1, 2, 3, 4, 5]);
+    assert.deepEqual(versions.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
   await t.test('repeated execution preserves history and reports no pending migrations', async () => {
@@ -194,6 +194,8 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       ORDER BY tablename, indexname
     `, [schema]);
     assert.deepEqual(indexes.rows, [
+      { tablename: 'auth_login_attempts', indexname: 'auth_login_attempts_locked_until_idx' },
+      { tablename: 'auth_login_attempts', indexname: 'auth_login_attempts_pkey' },
       { tablename: 'business_locations', indexname: 'business_locations_business_id_unique' },
       { tablename: 'business_locations', indexname: 'business_locations_business_name_unique' },
       { tablename: 'business_locations', indexname: 'business_locations_pkey' },
@@ -204,6 +206,11 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       { tablename: 'businesses', indexname: 'businesses_pkey' },
       { tablename: 'schema_migrations', indexname: 'schema_migrations_filename_key' },
       { tablename: 'schema_migrations', indexname: 'schema_migrations_pkey' },
+      { tablename: 'staff_sessions', indexname: 'staff_sessions_active_expires_at_idx' },
+      { tablename: 'staff_sessions', indexname: 'staff_sessions_pkey' },
+      { tablename: 'staff_sessions', indexname: 'staff_sessions_token_hash_key' },
+      { tablename: 'staff_sessions', indexname: 'staff_sessions_user_id_idx' },
+      { tablename: 'user_credentials', indexname: 'user_credentials_pkey' },
       { tablename: 'users', indexname: 'users_email_unique' },
       { tablename: 'users', indexname: 'users_pkey' },
     ]);
@@ -335,12 +342,12 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       if (change === 'rename') await rename(first, new URL('0001_renamed.sql', directory));
       if (change === 'remove') await rm(first);
       if (change === 'older') {
-        await rename(first, new URL('0006_create_users.sql', directory));
+        await rename(first, new URL('0009_create_users.sql', directory));
         await writeFile(first, 'SELECT 1;');
       }
       await assert.rejects(runMigrations(directory), /Migration history differs from local files/);
       const history = await postgresPool.query('SELECT count(*)::integer AS count FROM schema_migrations');
-      assert.equal(history.rows[0].count, 5);
+      assert.equal(history.rows[0].count, 8);
     }
   });
 
@@ -359,17 +366,17 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
 
   await t.test('a later failed batch preserves prior history and supports correction and retry', async (subtest) => {
     const directory = await migrationFixture(subtest);
-    await writeFile(new URL('0006_pending.sql', directory), 'CREATE TABLE pending_probe (id integer); INSERT INTO pending_probe VALUES (42);');
-    const failingFile = new URL('0007_failure.sql', directory);
+    await writeFile(new URL('0009_pending.sql', directory), 'CREATE TABLE pending_probe (id integer); INSERT INTO pending_probe VALUES (42);');
+    const failingFile = new URL('0010_failure.sql', directory);
     await writeFile(failingFile, 'CREATE TABLE partial_probe (id integer); SELECT nonexistent_private_function();');
     await assert.rejects(runMigrations(directory), /Database migrations failed/);
     const rolledBack = await postgresPool.query("SELECT to_regclass('pending_probe') AS pending, to_regclass('partial_probe') AS partial");
     assert.deepEqual(rolledBack.rows, [{ pending: null, partial: null }]);
     const history = await postgresPool.query('SELECT version FROM schema_migrations ORDER BY version');
-    assert.deepEqual(history.rows.map((row) => row.version), [1, 2, 3, 4, 5]);
+    assert.deepEqual(history.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8]);
 
     await writeFile(failingFile, 'CREATE TABLE corrected_probe (id integer);');
-    assert.deepEqual(await runMigrations(directory), ['0006_pending.sql', '0007_failure.sql']);
+    assert.deepEqual(await runMigrations(directory), ['0009_pending.sql', '0010_failure.sql']);
     assert.deepEqual(await runMigrations(directory), []);
     const inserted = await postgresPool.query('SELECT id FROM pending_probe');
     assert.deepEqual(inserted.rows, [{ id: 42 }]);

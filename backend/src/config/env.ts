@@ -90,25 +90,36 @@ export function validateEnv(values: NodeJS.ProcessEnv) {
     throw new Error('DATABASE_URL must be a PostgreSQL URL with a host, user, and database.');
   }
 
-  const databaseConnectionTimeoutMs = databaseTimeout(values, 'DATABASE_CONNECTION_TIMEOUT_MS', 5000);
-  const databaseIdleTimeoutMs = databaseTimeout(values, 'DATABASE_IDLE_TIMEOUT_MS', 30_000);
-  const databaseQueryTimeoutMs = databaseTimeout(values, 'DATABASE_QUERY_TIMEOUT_MS', 5000);
+  const databaseConnectionTimeoutMs = boundedInt(values, 'DATABASE_CONNECTION_TIMEOUT_MS', 5000, 1, 60_000);
+  const databaseIdleTimeoutMs = boundedInt(values, 'DATABASE_IDLE_TIMEOUT_MS', 30_000, 1, 60_000);
+  const databaseQueryTimeoutMs = boundedInt(values, 'DATABASE_QUERY_TIMEOUT_MS', 5000, 1, 60_000);
+  const authSessionTtlMs = boundedInt(values, 'AUTH_SESSION_TTL_MS', 28_800_000, 1000, 2_592_000_000);
+  const authLoginMaxAttempts = boundedInt(values, 'AUTH_LOGIN_MAX_ATTEMPTS', 5, 1, 100);
+  const authLoginWindowMs = boundedInt(values, 'AUTH_LOGIN_WINDOW_MS', 900_000, 1000, 86_400_000);
+  const authLoginLockoutMs = boundedInt(values, 'AUTH_LOGIN_LOCKOUT_MS', 900_000, 1000, 86_400_000);
 
   return {
     port, nodeEnv, corsOrigins, aiServiceUrl, aiServiceTimeoutMs,
     databaseUrl, databaseConnectionTimeoutMs, databaseIdleTimeoutMs, databaseQueryTimeoutMs,
+    authSessionTtlMs, authLoginMaxAttempts, authLoginWindowMs, authLoginLockoutMs,
   } as const;
 }
 
-function databaseTimeout(values: NodeJS.ProcessEnv, name: string, defaultValue: number): number {
+function boundedInt(
+  values: NodeJS.ProcessEnv,
+  name: string,
+  defaultValue: number,
+  min: number,
+  max: number,
+): number {
   const value = values[name] ?? String(defaultValue);
-  const milliseconds = Number(value);
+  const parsed = Number(value);
 
-  if (!/^\d+$/.test(value) || !Number.isInteger(milliseconds) || milliseconds < 1 || milliseconds > 60_000) {
-    throw new Error(`${name} must be an integer between 1 and 60000.`);
+  if (!/^\d+$/.test(value) || !Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}.`);
   }
 
-  return milliseconds;
+  return parsed;
 }
 
 export const env = validateEnv(process.env);

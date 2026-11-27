@@ -19,6 +19,12 @@ export function errorHandler(
 
   if (error instanceof HttpError) {
     ({ statusCode, code, message } = error);
+
+    if (error.headers) {
+      for (const [name, value] of Object.entries(error.headers)) {
+        res.setHeader(name, value);
+      }
+    }
   } else if (typeof error === 'object' && error !== null && 'type' in error) {
     // Parser messages can include request content; return fixed safe messages.
     switch (error.type) {

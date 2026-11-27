@@ -22,7 +22,8 @@ test('unspecified optional settings receive safe development defaults', () => {
     port: 3000, nodeEnv: 'development', corsOrigins: ['http://localhost:5173'],
     aiServiceUrl: 'http://127.0.0.1:8001', aiServiceTimeoutMs: 5000,
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
-    databaseQueryTimeoutMs: 5000,
+    databaseQueryTimeoutMs: 5000, authSessionTtlMs: 28_800_000,
+    authLoginMaxAttempts: 5, authLoginWindowMs: 900_000, authLoginLockoutMs: 900_000,
   });
 });
 
@@ -31,13 +32,16 @@ test('valid environment values and multiple origins are parsed', () => {
     PORT: '4100', NODE_ENV: 'production',
     CORS_ORIGIN: 'https://dashboard.example.com/, http://localhost:5173',
     AI_SERVICE_URL: 'https://ai.example.com:8443/', AI_SERVICE_TIMEOUT_MS: '2500',
+    AUTH_SESSION_TTL_MS: '60000', AUTH_LOGIN_MAX_ATTEMPTS: '8',
+    AUTH_LOGIN_WINDOW_MS: '120000', AUTH_LOGIN_LOCKOUT_MS: '300000',
   });
   assert.deepEqual(result, {
     port: 4100, nodeEnv: 'production',
     corsOrigins: ['https://dashboard.example.com', 'http://localhost:5173'],
     aiServiceUrl: 'https://ai.example.com:8443', aiServiceTimeoutMs: 2500,
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
-    databaseQueryTimeoutMs: 5000,
+    databaseQueryTimeoutMs: 5000, authSessionTtlMs: 60_000,
+    authLoginMaxAttempts: 8, authLoginWindowMs: 120_000, authLoginLockoutMs: 300_000,
   });
 });
 
@@ -61,9 +65,10 @@ test('wildcards, opaque origins, credentials, and URL paths cannot enter the all
 test('the trackable example contains valid non-secret configuration', () => {
   const example = parse(readFileSync(new URL('../.env.example', import.meta.url)));
   assert.deepEqual(Object.keys(example).sort(), [
-    'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL', 'CORS_ORIGIN',
-    'DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS', 'DATABASE_QUERY_TIMEOUT_MS',
-    'DATABASE_URL', 'NODE_ENV', 'PORT',
+    'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL',
+    'AUTH_LOGIN_LOCKOUT_MS', 'AUTH_LOGIN_MAX_ATTEMPTS', 'AUTH_LOGIN_WINDOW_MS', 'AUTH_SESSION_TTL_MS',
+    'CORS_ORIGIN', 'DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS',
+    'DATABASE_QUERY_TIMEOUT_MS', 'DATABASE_URL', 'NODE_ENV', 'PORT',
   ]);
   assert.equal(validateEnv(example).port, 3000);
 });
@@ -144,5 +149,21 @@ test('AI request timeouts must be bounded positive integer milliseconds', () => 
   }
   for (const AI_SERVICE_TIMEOUT_MS of ['1', '60000']) {
     assert.equal(validateEnv({ AI_SERVICE_TIMEOUT_MS }).aiServiceTimeoutMs, Number(AI_SERVICE_TIMEOUT_MS));
+  }
+});
+
+test('auth session and rate-limit settings reject invalid values', () => {
+  for (const [name, invalid, valid] of [
+    ['AUTH_SESSION_TTL_MS', ['0', '999', '2592000001', 'abc'], ['1000', '2592000000']],
+    ['AUTH_LOGIN_MAX_ATTEMPTS', ['0', '101', '-1', '1.5'], ['1', '100']],
+    ['AUTH_LOGIN_WINDOW_MS', ['0', '999', '86400001', ''], ['1000', '86400000']],
+    ['AUTH_LOGIN_LOCKOUT_MS', ['0', '999', '86400001', ' '], ['1000', '86400000']],
+  ]) {
+    for (const value of invalid) {
+      assert.throws(() => validateEnv({ [name]: value }), new RegExp(`${name} must be an integer`));
+    }
+    for (const value of valid) {
+      assert.ok(validateEnv({ [name]: value }));
+    }
   }
 });

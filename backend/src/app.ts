@@ -11,6 +11,7 @@ export const app = express();
 app.disable('x-powered-by');
 
 app.use(cors({
+  credentials: true,
   origin(origin, callback) {
     // Non-browser requests may omit Origin; CORS is not authentication.
     if (!origin || env.corsOrigins.includes(origin)) {

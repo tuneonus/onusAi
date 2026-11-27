@@ -57,6 +57,7 @@ test('configured origins receive CORS headers; other origins receive JSON 403', 
     const response = await fetch(`${baseUrl}/api/v1/health`, { headers: { origin } });
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('access-control-allow-origin'), origin);
+    assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
     assert.match(response.headers.get('vary'), /Origin/);
     await response.arrayBuffer();
   }
@@ -66,6 +67,7 @@ test('configured origins receive CORS headers; other origins receive JSON 403', 
   });
   assert.equal(denied.status, 403);
   assert.equal(denied.headers.get('access-control-allow-origin'), null);
+  assert.equal(denied.headers.get('access-control-allow-credentials'), null);
   assert.equal((await denied.json()).error.code, 'CORS_ORIGIN_DENIED');
 });
 
