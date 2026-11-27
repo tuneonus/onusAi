@@ -9,12 +9,20 @@ process.env.NODE_ENV = 'test';
 process.env.CORS_ORIGIN = 'http://localhost:5173';
 process.env.AI_SERVICE_URL = 'http://127.0.0.1:8001';
 process.env.AI_SERVICE_TIMEOUT_MS = '5000';
-const { validateEnv } = await import('../dist/config/env.js');
+const databaseUrl = 'postgresql://test:example-password@127.0.0.1:5433/onusai';
+process.env.DATABASE_URL = databaseUrl;
+process.env.DATABASE_CONNECTION_TIMEOUT_MS = '5000';
+process.env.DATABASE_IDLE_TIMEOUT_MS = '30000';
+process.env.DATABASE_QUERY_TIMEOUT_MS = '5000';
+const { validateEnv: validateEnvironment } = await import('../dist/config/env.js');
+const validateEnv = (values) => validateEnvironment({ DATABASE_URL: databaseUrl, ...values });
 
-test('unspecified settings receive safe development defaults', () => {
+test('unspecified optional settings receive safe development defaults', () => {
   assert.deepEqual(validateEnv({}), {
     port: 3000, nodeEnv: 'development', corsOrigins: ['http://localhost:5173'],
     aiServiceUrl: 'http://127.0.0.1:8001', aiServiceTimeoutMs: 5000,
+    databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
+    databaseQueryTimeoutMs: 5000,
   });
 });
 
@@ -28,6 +36,8 @@ test('valid environment values and multiple origins are parsed', () => {
     port: 4100, nodeEnv: 'production',
     corsOrigins: ['https://dashboard.example.com', 'http://localhost:5173'],
     aiServiceUrl: 'https://ai.example.com:8443', aiServiceTimeoutMs: 2500,
+    databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
+    databaseQueryTimeoutMs: 5000,
   });
 });
 
@@ -51,9 +61,64 @@ test('wildcards, opaque origins, credentials, and URL paths cannot enter the all
 test('the trackable example contains valid non-secret configuration', () => {
   const example = parse(readFileSync(new URL('../.env.example', import.meta.url)));
   assert.deepEqual(Object.keys(example).sort(), [
-    'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL', 'CORS_ORIGIN', 'NODE_ENV', 'PORT',
+    'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL', 'CORS_ORIGIN',
+    'DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS', 'DATABASE_QUERY_TIMEOUT_MS',
+    'DATABASE_URL', 'NODE_ENV', 'PORT',
   ]);
   assert.equal(validateEnv(example).port, 3000);
+});
+
+test('database URLs are required and invalid values never appear in validation errors', () => {
+  assert.throws(() => validateEnvironment({}), /DATABASE_URL must be a PostgreSQL URL/);
+
+  for (const DATABASE_URL of [
+    '', 'private-value', 'https://user:private-value@example.com/db',
+    'postgresql://user:private-value@/db', 'postgresql://example.com/db',
+    'postgresql://user:private-value@example.com', 'postgresql://user:private-value@example.com/',
+    'postgresql://user:private-value@example.com:0/db',
+    'postgresql://user:private-value@example.com:65536/db',
+    'postgresql://user:private-value@example.com/db#fragment',
+    'postgresql://user:private-value%ZZ@example.com/db',
+    ' postgresql://user:private-value@example.com/db ',
+  ]) {
+    assert.throws(() => validateEnv({ DATABASE_URL }), (error) => {
+      assert.equal(error.message, 'DATABASE_URL must be a PostgreSQL URL with a host, user, and database.');
+      assert.ok(!error.message.includes('private-value'));
+      assert.equal(error.cause, undefined);
+      return true;
+    });
+  }
+});
+
+test('local and cloud PostgreSQL URLs retain encoded credentials and TLS options', () => {
+  for (const DATABASE_URL of [
+    databaseUrl,
+    'postgres://user:encoded%40password@localhost:5432/database?sslmode=disable',
+    'postgresql://user:example-password@database.example.com:5432/database?sslmode=verify-full',
+    'postgresql://user:example-password@database.example.com/database?sslmode=verify-full&sslrootcert=%2Fcerts%2Fca.pem',
+  ]) {
+    assert.equal(validateEnv({ DATABASE_URL }).databaseUrl, DATABASE_URL);
+  }
+});
+
+test('database timeouts reject unbounded or invalid settings without exposing values', () => {
+  for (const name of ['DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS', 'DATABASE_QUERY_TIMEOUT_MS']) {
+    for (const value of ['', '0', '-1', '1.5', '1e3', '5000ms', ' ', '60001', 'private-value']) {
+      assert.throws(() => validateEnv({ [name]: value }), (error) => {
+        assert.equal(error.message, `${name} must be an integer between 1 and 60000.`);
+        return true;
+      });
+    }
+    for (const value of ['1', '60000']) {
+      const result = validateEnv({ [name]: value });
+      const property = {
+        DATABASE_CONNECTION_TIMEOUT_MS: 'databaseConnectionTimeoutMs',
+        DATABASE_IDLE_TIMEOUT_MS: 'databaseIdleTimeoutMs',
+        DATABASE_QUERY_TIMEOUT_MS: 'databaseQueryTimeoutMs',
+      }[name];
+      assert.equal(result[property], Number(value));
+    }
+  }
 });
 
 test('invalid AI service URLs are rejected without echoing their values', () => {

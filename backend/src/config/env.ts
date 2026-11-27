@@ -69,7 +69,46 @@ export function validateEnv(values: NodeJS.ProcessEnv) {
     throw new Error('AI_SERVICE_TIMEOUT_MS must be an integer between 1 and 60000.');
   }
 
-  return { port, nodeEnv, corsOrigins, aiServiceUrl, aiServiceTimeoutMs } as const;
+  const databaseUrl = values.DATABASE_URL ?? '';
+
+  try {
+    const url = new URL(databaseUrl);
+
+    if (
+      (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') ||
+      !url.hostname || !url.username || url.pathname.length <= 1 ||
+      url.hash || url.port === '0' || databaseUrl !== databaseUrl.trim()
+    ) {
+      throw new Error('Invalid database URL.');
+    }
+
+    // Reject malformed percent escapes before the driver decodes credentials.
+    decodeURIComponent(url.username);
+    decodeURIComponent(url.password);
+    decodeURIComponent(url.pathname);
+  } catch {
+    throw new Error('DATABASE_URL must be a PostgreSQL URL with a host, user, and database.');
+  }
+
+  const databaseConnectionTimeoutMs = databaseTimeout(values, 'DATABASE_CONNECTION_TIMEOUT_MS', 5000);
+  const databaseIdleTimeoutMs = databaseTimeout(values, 'DATABASE_IDLE_TIMEOUT_MS', 30_000);
+  const databaseQueryTimeoutMs = databaseTimeout(values, 'DATABASE_QUERY_TIMEOUT_MS', 5000);
+
+  return {
+    port, nodeEnv, corsOrigins, aiServiceUrl, aiServiceTimeoutMs,
+    databaseUrl, databaseConnectionTimeoutMs, databaseIdleTimeoutMs, databaseQueryTimeoutMs,
+  } as const;
+}
+
+function databaseTimeout(values: NodeJS.ProcessEnv, name: string, defaultValue: number): number {
+  const value = values[name] ?? String(defaultValue);
+  const milliseconds = Number(value);
+
+  if (!/^\d+$/.test(value) || !Number.isInteger(milliseconds) || milliseconds < 1 || milliseconds > 60_000) {
+    throw new Error(`${name} must be an integer between 1 and 60000.`);
+  }
+
+  return milliseconds;
 }
 
 export const env = validateEnv(process.env);

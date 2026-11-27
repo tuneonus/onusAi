@@ -24,16 +24,17 @@ Last updated: 27 November 2026 (Asia/Kolkata). This record separates repository 
 | Repository foundation | Verified locally in 00.01/00.02; initial README-only push verified separately |
 | Requirements and design | Documentation verified in 00.03; foundations and health communication verified below, business/AI product features remain planned |
 | Applications | Dashboard scaffold/dependencies observed during verification, outside this step's changes; not reviewed or verified. Other frontend directories remain empty. |
-| Node.js business service | Foundation verified; now includes the approved native-fetch AI client and GET `/api/v1/ai/health`. No authentication, persistence, or business/AI workflows. |
+| Node.js business service | Foundation, native-fetch AI health client, PostgreSQL connection pool, and database readiness endpoint verified. No authentication, stored application data, or business/AI workflows. |
 | FastAPI service | Foundation verified; its existing `/api/v1/health` is called by Node.js. No Python source changes were required for basic communication. |
-| PostgreSQL, Qdrant, Redis | Docker containers running and readiness checks passed as reported by the user before this step; no application integration added or readiness checks repeated here |
+| PostgreSQL | Node.js integration verified against the existing database on host port 5433; shared pool, timeouts, readiness, safe failures, and shutdown cleanup implemented. No schema or ORM. |
+| Qdrant, Redis | Docker readiness previously reported by the user; no application integration added or readiness checks repeated in the PostgreSQL step |
 | Node.js-to-FastAPI communication | Local health contract verified with configurable URL/timeout, runtime response validation, safe errors, and real communication between both backend processes |
 | Gemini, LangChain, LangGraph, MCP, LangSmith | Not integrated; no live-model calls, agents, embeddings, traces, or experiments |
 | Business/AI features | Not implemented: no knowledge ingestion, RAG, widget, conversations, leads, bookings, approvals, or analytics |
 | Centralized branding configuration | Backend product name centralized in `backend/src/config/branding.ts`; AI service title centralized in `Settings.app_name`. Cross-application shared configuration remains planned for 04.04 |
-| Tests | 32 Node.js tests passed after the communication change. The unchanged FastAPI foundation has 16 tests recorded in its earlier step; actual cross-service communication verified separately below. |
+| Tests | 47 Node.js tests passed with live PostgreSQL checks enabled; all 16 existing FastAPI tests also passed again. Database-independent Node.js run: 43 passed, four live checks skipped as designed. |
 | Docker, CI/CD, deployment | Existing `compose.yaml` and running data-service containers preserved; application containerization, CI/CD, and public deployment not implemented in this step |
-| Dependencies | Existing Node.js/Python dependencies reused; no dependency installed or manifest changed by the communication step. Earlier Python `pip check` passed. Dashboard dependencies remain unverified. |
+| Dependencies | PostgreSQL step installed `pg` and development-only `@types/pg` after explicit user approval; backend manifest/lockfile updated. Other existing dependencies preserved. Dashboard dependencies remain unverified. |
 
 ## Step 00.03 deliverables
 
@@ -274,16 +275,82 @@ Limitations: this is a local liveness communication check. Authentication, deleg
 
 No dependency installation, frontend/Python/infrastructure change, commit, or push was performed. Stop here for approval before any next feature.
 
+## PostgreSQL integration — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and dependencies
+
+The user approved PostgreSQL environment configuration, a reusable Node.js pool, connection/idle timeouts, readiness, safe failures, graceful cleanup, automated tests, actual Docker database connection verification, and this progress update. ORM, schemas, authentication, and other features were explicitly excluded. This establishes database connectivity before the schema work planned in roadmap 04.01; it does not complete that roadmap step.
+
+Read `AGENTS.md`, existing Node.js source/configuration/tests, progress and relevant roadmap records, and the existing Docker configuration before editing. Contrary to the initial assumption, neither `pg` nor `@types/pg` was installed or declared in `backend/`. The user explicitly approved installing both. `npm install pg` adds the PostgreSQL driver; `npm install --save-dev @types/pg` adds compile-time types. The resulting versions are both 8.23.1, recorded in `backend/package.json` and its lockfile. No other direct dependency was added. Installation reported zero known vulnerabilities at that time; no install-script approvals were changed.
+
+### Files and behavior
+
+| File under `backend/` | Responsibility |
+| --- | --- |
+| `src/config/env.ts` | Requires a PostgreSQL `DATABASE_URL` containing a host, user, and database. Validates URI structure/credential encoding and positive integer timeout settings without echoing supplied values. Existing dotenv loading and process-variable precedence remain in place. |
+| `.env.example` | Documents host port 5433, a placeholder password, percent-encoding, timeout defaults, and cloud TLS configuration. No actual database password was added to the example or application source. |
+| `src/integrations/database/postgres.ts` | Exports one reusable `postgresPool`, a read-only readiness check, and idempotent pool closure. Caps connections at ten, creates connections lazily, handles idle-client error events with a fixed log message, and maps readiness failures to a safe `HttpError`. |
+| `src/modules/health/health.routes.ts` | Adds GET `/api/v1/health/ready`, which runs `SELECT 1`. Returns HTTP 200 with `{"status":"ok","database":"ready"}` on success; uses `Cache-Control: no-store` for success and failure. Existing GET `/api/v1/health` remains process liveness without database access. |
+| `src/server.ts` | Drains HTTP requests before awaiting pool closure on SIGINT/SIGTERM. The existing ten-second forced shutdown deadline now covers both HTTP draining and database cleanup. Logs cleanup failures safely and sets a nonzero exit code. Also closes the lazy pool after server startup errors. |
+| `tests/postgres.test.mjs` | Database-independent readiness success/error checks, credential-safe responses/logs, idle-error handling, actual stalled-handshake timeout and refused-connection checks, independent liveness, lazy connections, and idempotent cleanup. |
+| `tests/postgres.integration.test.mjs` | Opt-in live read-only SQL/HTTP checks for parameterized queries, connection reuse, query timeout/recovery, idle eviction, actual failed authentication, and production-entrypoint shutdown on both signals. Observes only test-named connections in `pg_stat_activity` to verify closure. |
+| Existing `tests/*.test.mjs` | Keeps configuration deterministic as `DATABASE_URL` becomes required; adds URL/timeout validation and production startup/shutdown regression assertions. Existing AI, CORS, parsing, errors, routing, and lifecycle checks remain. |
+
+Configuration:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Required; no credential-bearing fallback | Local `postgresql://` or `postgres://` URL, or a future cloud provider URL |
+| `DATABASE_CONNECTION_TIMEOUT_MS` | 5000 | Bounds connecting and waiting for an available pool client |
+| `DATABASE_IDLE_TIMEOUT_MS` | 30000 | Closes unused pooled connections |
+| `DATABASE_QUERY_TIMEOUT_MS` | 5000 | Sets both client query timeout and PostgreSQL statement timeout |
+
+All three timeout settings accept integers from 1 through 60000 milliseconds. Requiring the URL prevents accidental reliance on an implicit local database in production. A valid configuration permits HTTP startup even if PostgreSQL is unavailable; readiness then reports failure while process liveness continues. Each probe issues a fresh query, allowing recovery without restarting Node.js. There is no application retry loop.
+
+Every readiness connection/authentication/query failure returns HTTP 503 with `{"error":{"code":"DATABASE_UNAVAILABLE","message":"Database is unavailable."}}`. Driver errors, URLs, credentials, internal addresses, and stack traces are not copied to responses or application logs. Idle connection failures are handled outside request processing so an emitted pool error does not crash the process.
+
+The shared pool uses [`pg.Pool`](https://node-postgres.com/apis/pool); `pool.query()` acquires/releases a client automatically, and `pool.end()` drains the pool. This avoids per-request connection setup and manual release paths for the current single-query probe. Future transactions must acquire one client, use it throughout, and release it in `finally`. No transaction helper is introduced in this step.
+
+Local configuration uses `127.0.0.1:5433`, matching the existing Docker host mapping to container port 5432. Cloud support passes the supplied connection string and its [TLS options](https://node-postgres.com/features/ssl) to `pg` without hardcoding local hosts or disabling certificate verification. Prefer `sslmode=verify-full`; a provider private CA can be supplied through `sslrootcert` or the runtime trust store. Actual cloud connectivity and certificates were not tested. No developer `.env` file was created or edited; configure the required URL securely in the process environment or ignored backend `.env` before starting the service.
+
+### Commands and verification evidence
+
+From `backend/`:
+
+```bash
+npm run typecheck
+npm test
+```
+
+The first command checks strict TypeScript without generating output. The second builds ignored `dist/` and runs all tests through Node's existing built-in test runner. Without `TEST_DATABASE_URL`, the four live checks skip explicitly and the other 43 tests run without a database.
+
+To include live tests, securely set `TEST_DATABASE_URL` to the local test database URL, then run `npm test` again. It is separate from the application `DATABASE_URL` so the ordinary test suite cannot accidentally target a developer database. Avoid placing credentials in shell history or committed files. Live checks run read-only queries, including a bounded sleep, and use an intentionally incorrect password for the failure case; they create no schema or application data.
+
+Verified results:
+
+- Strict TypeScript checking and the compiled build passed.
+- Database-independent Node.js run: **43 passed**, four live tests explicitly skipped.
+- Final Node.js run with the existing local PostgreSQL URL supplied securely: **47 passed**, zero failed/skipped.
+- Actual PostgreSQL protocol connection and `SELECT 1` succeeded on `127.0.0.1:5433`. Sequential parameterized/read-only queries reused the same backend connection. Idle connections were evicted; a timed-out query discarded its connection, and a subsequent readiness request recovered.
+- Production Node.js entrypoints returned HTTP 200 for readiness with a real connection. SIGINT and SIGTERM each exited with code zero after logging HTTP drain followed by pool closure; `pg_stat_activity` confirmed the test-named connection disappeared.
+- A real incorrect-password attempt returned the fixed HTTP 503 response without leaking its connection string/password; liveness still returned HTTP 200. Separate TCP fixtures verified bounded stalled authentication and refused connections without stopping any container.
+- All **16 existing Python tests passed** again using `.venv/bin/python -m unittest discover -s tests -v` from `ai-backend/`. Python source/dependencies were unchanged. The dashboard has no test script and was left unchanged.
+- Whitespace checks passed. Changes are confined to the PostgreSQL backend integration, its configuration/dependencies/tests, and this progress record. Existing untracked `compose.yaml` and `dashboard/` were preserved. No commit or push was performed.
+
+The Docker socket is inaccessible to this session, and noninteractive sudo requires a password, so `docker compose ps` could not verify container metadata. Verification used the actual database through its existing Docker-mapped host port instead; no Docker configuration or container lifecycle changes were needed. No cloud database, TLS handshake, load test, schema, migration, ORM, or authentication feature was exercised or introduced. No learner demonstration has been assessed.
+
 ## Upcoming phases and next proposed step
 
-The Node.js and FastAPI foundations and basic local health communication are verified in their respective records above. Await user review and approval of the next scope. Remaining roadmap items include request correlation IDs/general request validation, the validated mock AI request/response contract, and authenticated service communication. No further feature or model integration is authorized by this record.
+The Node.js and FastAPI foundations, basic local health communication, and PostgreSQL connection foundation are verified in their respective records above. Await user review and approval of the next scope. Remaining roadmap items include request correlation IDs/general request validation, the validated mock AI request/response contract, authenticated service communication, and database schema design. No further feature or model integration is authorized by this record.
 
 | Phase | Planned work | Current state |
 | --- | --- | --- |
 | 01 | Node.js business-service foundation and tests | Approved foundation verified: 01.01 complete; 01.02 error/routing/shutdown portions complete with correlation IDs/general request validation pending; 01.03 foundation tests verified using the built-in runner |
 | 02 | FastAPI AI-service foundation and tests | 02.01 verified with explicitly requested errors/logging/lifespan and proportionate tests; mock contract 02.02 and remaining async-boundary work 02.03 not implemented |
 | 03 | Private backend integration and Gemini baseline | Basic health communication/timeout/error handling verified as the approved subset of 03.01; authentication, delegation, correlation IDs, and Gemini steps remain unimplemented |
-| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | Not started; steps 04.01–04.05 |
+| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | PostgreSQL connectivity/readiness verified as a separately approved foundation; schema/migration steps 04.01–04.05 remain unimplemented |
 | 05 | React dashboard and staff playground | Not verified; separately appearing scaffold must be inspected at the approved step; steps 05.01–05.03 |
 | 06 | Document lifecycle, durable ingestion jobs, and chunking | Not started; steps 06.01–06.03 |
 | 07 | Embeddings, Qdrant, semantic search, and grounded RAG | Not started; steps 07.01–07.05 |
@@ -306,4 +373,4 @@ After an implementation step, record: what the developer can explain, a design a
 
 ## Approval boundary
 
-Stop after reporting the verified basic service-communication step. Await explicit user approval for the next scope, additional dependencies, authentication/persistence/model integration, frontend changes, or any commit/push. Completing this step does not authorize the next one.
+Stop after reporting the verified PostgreSQL integration step. Await explicit user approval for the next scope, additional dependencies, schema/ORM/authentication/model integration, frontend changes, or any commit/push. Completing this step does not authorize the next one.

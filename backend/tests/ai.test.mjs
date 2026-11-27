@@ -46,6 +46,9 @@ before(async () => {
   Object.assign(process.env, {
     PORT: '3000', NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173',
     AI_SERVICE_URL: upstreamUrl, AI_SERVICE_TIMEOUT_MS: '200',
+    DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+    DATABASE_CONNECTION_TIMEOUT_MS: '5000', DATABASE_IDLE_TIMEOUT_MS: '30000',
+    DATABASE_QUERY_TIMEOUT_MS: '5000',
   });
   const { app } = await import('../dist/app.js');
   ({ getAiHealth } = await import('../dist/integrations/ai/ai-client.js'));

@@ -12,6 +12,9 @@ function serverEnvironment(port) {
   return {
     ...process.env, PORT: String(port), NODE_ENV: 'production', CORS_ORIGIN: 'http://localhost:5173',
     AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
+    DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
+    DATABASE_CONNECTION_TIMEOUT_MS: '5000', DATABASE_IDLE_TIMEOUT_MS: '30000',
+    DATABASE_QUERY_TIMEOUT_MS: '5000',
   };
 }
 
@@ -59,6 +62,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     assert.equal(code, 0, server.output());
     assert.equal(exitSignal, null);
     assert.match(server.output(), /HTTP server stopped/);
+    assert.match(server.output(), /PostgreSQL pool closed/);
   });
 }
 
@@ -97,6 +101,26 @@ test('shutdown drains an in-flight request and tolerates repeated signals', { ti
   await once(response, 'end');
   const [code] = await server.exited;
   assert.equal(code, 0, server.output());
+});
+
+test('invalid database settings prevent startup without exposing credentials', () => {
+  for (const [name, value] of [
+    ['DATABASE_URL', 'https://user:private-value@example.com/database'],
+    ['DATABASE_URL', ''],
+    ['DATABASE_CONNECTION_TIMEOUT_MS', '0'],
+    ['DATABASE_IDLE_TIMEOUT_MS', '0'],
+    ['DATABASE_QUERY_TIMEOUT_MS', '0'],
+  ]) {
+    const result = spawnSync(process.execPath, ['dist/server.js'], {
+      cwd: backendDirectory,
+      env: { ...serverEnvironment(3000), [name]: value },
+      encoding: 'utf8', timeout: 5_000,
+    });
+    assert.equal(result.status, 1);
+    assert.ok(result.stderr.includes(`${name} must be`));
+    assert.ok(!result.stderr.includes('private-value'));
+    assert.ok(!result.stdout.includes('business API listening'));
+  }
 });
 
 test('shutdown force-closes a stuck request after the deadline', { timeout: 15_000 }, async (t) => {

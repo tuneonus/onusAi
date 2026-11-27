@@ -8,6 +8,10 @@ process.env.PORT = '3000';
 process.env.CORS_ORIGIN = 'https://dashboard.example.com,https://demo.example.com';
 process.env.AI_SERVICE_URL = 'http://127.0.0.1:8001';
 process.env.AI_SERVICE_TIMEOUT_MS = '5000';
+process.env.DATABASE_URL = 'postgresql://test:example-password@127.0.0.1:5433/onusai';
+process.env.DATABASE_CONNECTION_TIMEOUT_MS = '5000';
+process.env.DATABASE_IDLE_TIMEOUT_MS = '30000';
+process.env.DATABASE_QUERY_TIMEOUT_MS = '5000';
 
 const { app } = await import('../dist/app.js');
 const { errorHandler } = await import('../dist/middlewares/error-handler.js');
