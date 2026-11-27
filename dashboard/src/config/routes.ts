@@ -1,4 +1,6 @@
 import type { IconName } from '../components/ui/Icons';
+import type { BusinessRole } from '../features/auth/types';
+import { canViewStaff } from '../features/staff/permissions.ts';
 
 export const ROUTES = {
   login: '/login',
@@ -52,7 +54,7 @@ export const DASHBOARD_NAV_ITEMS: readonly NavItemConfig[] = [
     label: 'Staff & Access',
     description: 'Owner and operator role permissions and team membership directory.',
     icon: 'users',
-    implemented: false,
+    implemented: true,
     section: 'workspace',
   },
   {
@@ -60,7 +62,7 @@ export const DASHBOARD_NAV_ITEMS: readonly NavItemConfig[] = [
     label: 'Assistants',
     description: 'Assistant personas, model guardrails, tool scopes, and version publishing.',
     icon: 'bot',
-    implemented: false,
+    implemented: true,
     section: 'workspace',
   },
   {
@@ -68,7 +70,7 @@ export const DASHBOARD_NAV_ITEMS: readonly NavItemConfig[] = [
     label: 'Playground & Inbox',
     description: 'Staff test sessions, AI turns, operator notes, and conversation lifecycle.',
     icon: 'message',
-    implemented: false,
+    implemented: true,
     section: 'workspace',
   },
   {
@@ -80,3 +82,7 @@ export const DASHBOARD_NAV_ITEMS: readonly NavItemConfig[] = [
     section: 'system',
   },
 ] as const;
+
+export function getVisibleNavItems(role: BusinessRole | null | undefined): readonly NavItemConfig[] {
+  return DASHBOARD_NAV_ITEMS.filter((item) => item.path !== ROUTES.staff || canViewStaff(role));
+}

@@ -1,0 +1,44 @@
+.conversations-page { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; gap: var(--space-3); }
+.playground-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-3); }
+.playground-heading h2 { font-size: var(--text-xl); }
+.playground-heading p,
+.playground-heading summary { font-size: var(--text-sm); color: var(--color-text-secondary); }
+.playground-heading details { max-width: 35rem; }
+.playground-heading summary { cursor: pointer; }
+.conversations-workspace { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); align-items: stretch; gap: var(--space-4); }
+.conversations-workspace > .ui-card { min-height: 0; }
+.conversations-workspace > .ui-card:first-child { display: flex; flex-direction: column; }
+.conversations-sidebar { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--space-4); gap: var(--space-3); }
+.conversations-sidebar nav { display: flex; flex-direction: column; gap: var(--space-3); flex-shrink: 0; }
+.conversation-list-item { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); text-align: left; cursor: pointer; }
+.conversation-list-item[aria-pressed=true] { background: var(--brand-gradient-subtle); border-color: var(--color-primary-border); }
+.conversation-list-item > span { font-size: var(--text-xs); color: var(--color-text-secondary); }
+.conversation-thread { display: flex; flex-direction: column; overflow: visible; }
+.conversation-thread > .ui-card__header { padding: var(--space-4); flex-shrink: 0; }
+.conversation-controls { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-3); border-bottom: 1px solid var(--color-border); padding: var(--space-2) var(--space-4); flex-shrink: 0; }
+.conversation-controls .ui-field { flex-direction: row; align-items: center; gap: var(--space-3); }
+.conversation-controls .ui-field__label { white-space: nowrap; }
+.conversation-controls .ui-select { padding-block: var(--space-1); width: auto; min-width: 8rem; }
+.conversation-messages { flex: 1; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); background: var(--color-bg); }
+.conversation-bubble { flex-shrink: 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); max-width: 92%; align-self: flex-start; overflow-wrap: anywhere; }
+.conversation-bubble--user { align-self: flex-end; background: var(--color-primary-subtle); border-color: var(--color-primary-border); }
+.conversation-bubble header { display: flex; justify-content: space-between; gap: var(--space-4); font-size: var(--text-xs); color: var(--color-text-secondary); margin-bottom: var(--space-2); }
+.conversation-bubble p { white-space: pre-wrap; font-size: var(--text-sm); }
+.conversation-bubble small { display: block; margin-top: var(--space-3); font-size: var(--text-xs); color: var(--color-text-muted); }
+.conversation-metadata summary { cursor: pointer; font-size: var(--text-xs); color: var(--color-text-muted); margin-top: var(--space-2); }
+.conversation-generating { display: flex; gap: var(--space-3); align-items: center; font-size: var(--text-sm); }
+.conversation-composer { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); flex-shrink: 0; background: var(--color-surface); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+.conversation-composer form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); }
+.conversation-composer textarea { min-height: 64px; max-height: 140px; }
+.conversation-composer .ui-field__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.conversation-empty { padding: var(--space-8); color: var(--color-text-secondary); font-size: var(--text-sm); }
+@media (max-width: 960px) {
+  .conversations-workspace { grid-template-columns: minmax(190px, 230px) minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .app-shell__content:has(.conversations-page) { height: auto; }
+  .conversations-page { height: auto; flex: none; }
+  .conversations-workspace { display: flex; flex-direction: column; }
+  .conversations-sidebar { max-height: 280px; }
+  .conversation-thread { height: 65dvh; min-height: 480px; }
+}

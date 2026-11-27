@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';
 import { Icon } from '../components/ui/Icons';
 import { Spinner } from '../components/ui/Spinner';
-import { DASHBOARD_NAV_ITEMS, ROUTES } from '../config/routes';
+import { getVisibleNavItems, ROUTES } from '../config/routes';
 import { useTenant } from '../features/businesses/useTenant';
 import './DashboardHomePage.css';
 
@@ -21,7 +21,7 @@ export function DashboardHomePage() {
     profileError,
   } = useTenant();
 
-  const workspaceModules = DASHBOARD_NAV_ITEMS.filter(
+  const workspaceModules = getVisibleNavItems(activeMembership?.role).filter(
     (item) => item.section === 'workspace' && item.path !== ROUTES.overview,
   );
 

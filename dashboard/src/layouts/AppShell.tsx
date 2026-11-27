@@ -1,3 +1,4 @@
+import { requestGuardedAction } from '../hooks/useUnsavedChanges';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { Alert } from '../components/ui/Alert';
@@ -5,7 +6,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icons';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
-import { DASHBOARD_NAV_ITEMS, ROUTES } from '../config/routes';
+import { getVisibleNavItems, ROUTES } from '../config/routes';
 import { useAuth } from '../features/auth/useAuth';
 import { WorkspaceSwitcher } from '../features/businesses/components/WorkspaceSwitcher';
 import { useTenant } from '../features/businesses/useTenant';
@@ -66,8 +67,9 @@ export function AppShell({
   const closeMobileMenu = () => setMobileMenuOpen(false);
   const brandInitials = branding.shortName.slice(0, 2).toUpperCase();
 
-  const workspaceNavItems = DASHBOARD_NAV_ITEMS.filter((item) => item.section === 'workspace');
-  const systemNavItems = DASHBOARD_NAV_ITEMS.filter((item) => item.section === 'system');
+  const visibleNavItems = getVisibleNavItems(activeMembership?.role);
+  const workspaceNavItems = visibleNavItems.filter((item) => item.section === 'workspace');
+  const systemNavItems = visibleNavItems.filter((item) => item.section === 'system');
 
   const handleSignOut = async () => {
     setLogoutError(null);
@@ -220,7 +222,7 @@ export function AppShell({
               size="sm"
               loading={isSigningOut}
               aria-label="Sign out"
-              onClick={() => void handleSignOut()}
+              onClick={() => requestGuardedAction(() => void handleSignOut())}
             >
               <Icon name="logout" size={14} />
               <span className="app-shell__signout-label">Sign out</span>

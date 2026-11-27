@@ -323,3 +323,15 @@
     display: none;
   }
 }
+
+/* The shell owns the viewport; navigation and page content scroll separately. */
+.app-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+.app-shell__sidebar { height: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.app-shell__brand,.app-shell__sidebar-footer { flex-shrink: 0; }
+.app-shell__nav { flex: 1 0 auto; }
+.app-shell__main-column { height: 100%; min-height: 0; }
+.app-shell__topbar { flex-shrink: 0; }
+.app-shell__main { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-5); }
+.app-shell__content { max-width: none; min-height: 100%; gap: var(--space-4); }
+.app-shell__content:has(.assistants-page),.app-shell__content:has(.conversations-page) { height: 100%; }
+@media(max-width:640px) { .app-shell__main { padding: var(--space-3); } .app-shell__topbar { gap: var(--space-2); } }

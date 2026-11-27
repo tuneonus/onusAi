@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { DASHBOARD_NAV_ITEMS, ROUTES } from './config/routes';
 import { AuthProvider } from './features/auth/AuthProvider';
 import { ProtectedRoute } from './features/auth/components/ProtectedRoute';
@@ -13,6 +13,9 @@ import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { LocationsPage } from './pages/LocationsPage';
 import { LoginPage } from './pages/LoginPage';
 import { ModulePlaceholderPage } from './pages/ModulePlaceholderPage';
+import { AssistantsPage } from './pages/AssistantsPage';
+import { ConversationsPage } from './pages/ConversationsPage';
+import { StaffPage } from './pages/StaffPage';
 
 function DashboardRoutes() {
   const { pathname } = useLocation();
@@ -87,6 +90,24 @@ function DashboardRoutes() {
           }
         />
 
+        <Route path={ROUTES.conversations} element={<AppShell branding={system.branding} themePreference={preference} onSelectTheme={setPreference} pageTitle="Conversations"><ConversationsPage /></AppShell>} />
+
+        <Route path={ROUTES.assistants} element={<AppShell branding={system.branding} themePreference={preference} onSelectTheme={setPreference} pageTitle="AI Assistants"><AssistantsPage /></AppShell>} />
+
+        <Route
+          path={ROUTES.staff}
+          element={
+            <AppShell
+              branding={system.branding}
+              themePreference={preference}
+              onSelectTheme={setPreference}
+              pageTitle="Staff & Access"
+            >
+              <StaffPage />
+            </AppShell>
+          }
+        />
+
         <Route
           path={ROUTES.diagnostics}
           element={
@@ -124,16 +145,20 @@ function DashboardRoutes() {
   );
 }
 
-export function App() {
+function DashboardProviders() {
   return (
-    <BrowserRouter>
+    <>
       <AuthProvider>
         <TenantProvider>
           <DashboardRoutes />
         </TenantProvider>
       </AuthProvider>
-    </BrowserRouter>
+    </>
   );
 }
+
+const router = createBrowserRouter([{ path: '*', element: <DashboardProviders /> }]);
+
+export function App() { return <RouterProvider router={router} />; }
 
 export default App;

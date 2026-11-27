@@ -25,7 +25,9 @@ export type IconName =
   | 'archive'
   | 'clock'
   | 'chevronDown'
-  | 'check';
+  | 'check'
+  | 'send'
+  | 'more';
 
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
@@ -220,6 +222,10 @@ export function Icon({ name, size = 16, ...props }: IconProps) {
           <path d="m6 9 6 6 6-6" />
         </svg>
       );
+    case 'more':
+      return <svg {...common}><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></svg>;
+    case 'send':
+      return <svg {...common}><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>;
     case 'check':
       return (
         <svg {...common}>

@@ -1,3 +1,4 @@
+import { requestGuardedAction } from '../../../hooks/useUnsavedChanges';
 import { Link } from 'react-router-dom';
 import { Badge } from '../../../components/ui/Badge';
 import { SelectField } from '../../../components/ui/SelectField';
@@ -37,7 +38,7 @@ export function WorkspaceSwitcher({ onNavigate }: WorkspaceSwitcherProps) {
           compact
           disabled={isLoadingBusinesses && businesses.length === 0}
           value={activeBusinessId ?? ''}
-          onChange={(event) => selectBusiness(event.target.value)}
+          onChange={(event) => { const id = event.target.value; requestGuardedAction(() => selectBusiness(id)); }}
         >
           {businesses.map((entry) => (
             <option key={entry.businessId} value={entry.businessId}>
