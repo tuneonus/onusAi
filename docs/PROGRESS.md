@@ -26,13 +26,13 @@ Last updated: 27 November 2026 (Asia/Kolkata). This record separates repository 
 | Applications | Dashboard scaffold/dependencies observed during verification, outside this step's changes; not reviewed or verified. Other frontend directories remain empty. |
 | Node.js business service | Foundation, native-fetch AI health client, PostgreSQL connection pool, and database readiness endpoint verified. No authentication, stored application data, or business/AI workflows. |
 | FastAPI service | Foundation verified; its existing `/api/v1/health` is called by Node.js. No Python source changes were required for basic communication. |
-| PostgreSQL | Node.js integration verified against the existing database on host port 5433; shared pool, timeouts, readiness, safe failures, and shutdown cleanup implemented. No schema or ORM. |
+| PostgreSQL | Node.js pool/readiness, SQL migration runner (`backend/src/integrations/database/migrations.ts`, `backend/src/migrate.ts`), `schema_migrations`, and core tenant schema (`users`, `businesses`, `business_members`, `business_locations`, `updated_at` triggers) verified against the running Docker database on host port 5433. No ORM, authentication, or row-level security yet. |
 | Qdrant, Redis | Docker readiness previously reported by the user; no application integration added or readiness checks repeated in the PostgreSQL step |
 | Node.js-to-FastAPI communication | Local health contract verified with configurable URL/timeout, runtime response validation, safe errors, and real communication between both backend processes |
 | Gemini, LangChain, LangGraph, MCP, LangSmith | Not integrated; no live-model calls, agents, embeddings, traces, or experiments |
 | Business/AI features | Not implemented: no knowledge ingestion, RAG, widget, conversations, leads, bookings, approvals, or analytics |
 | Centralized branding configuration | Backend product name centralized in `backend/src/config/branding.ts`; AI service title centralized in `Settings.app_name`. Cross-application shared configuration remains planned for 04.04 |
-| Tests | 47 Node.js tests passed with live PostgreSQL checks enabled; all 16 existing FastAPI tests also passed again. Database-independent Node.js run: 43 passed, four live checks skipped as designed. |
+| Tests | 80 Node.js tests passed with live PostgreSQL checks enabled (0 failed, 0 skipped). Database-independent Node.js run: 61 passed, 5 live integration checks skipped as designed. (16 existing FastAPI tests were verified in the prior step and not re-run here because Python files were unchanged.) |
 | Docker, CI/CD, deployment | Existing `compose.yaml` and running data-service containers preserved; application containerization, CI/CD, and public deployment not implemented in this step |
 | Dependencies | PostgreSQL step installed `pg` and development-only `@types/pg` after explicit user approval; backend manifest/lockfile updated. Other existing dependencies preserved. Dashboard dependencies remain unverified. |
 
@@ -341,16 +341,59 @@ Verified results:
 
 The Docker socket is inaccessible to this session, and noninteractive sudo requires a password, so `docker compose ps` could not verify container metadata. Verification used the actual database through its existing Docker-mapped host port instead; no Docker configuration or container lifecycle changes were needed. No cloud database, TLS handshake, load test, schema, migration, ORM, or authentication feature was exercised or introduced. No learner demonstration has been assessed.
 
+## PostgreSQL schema and migration system — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and review
+
+Continued from the existing partial work on roadmap step 04.01 (PostgreSQL migration system and core tenant, user, membership, and location schema). Inspected git status/diff, existing SQL migration files, migration runner, CLI entrypoint, and unit/integration tests before making targeted fixes. No new npm dependencies were added, no existing database data was deleted, and no step beyond 04.01 was implemented.
+
+### Files and responsibilities
+
+| File under `backend/` | Responsibility and review status |
+| --- | --- |
+| `database/schema_migrations.sql` | Preserved; defines `schema_migrations` with positive integer `version` PK, unique `filename`, 64-char lowercase hex SHA-256 `checksum`, and `applied_at` timestamp |
+| `database/migrations/0001_create_users.sql` | Preserved; creates `users` (`id` UUID PK, trimmed/validated `email` with case-insensitive `users_email_unique` index on `lower(email)`, validated `display_name`, `created_at`, `updated_at`) |
+| `database/migrations/0002_create_businesses.sql` | Preserved; creates `businesses` (`id` UUID PK, trimmed/validated `name`, `created_at`, `updated_at`) |
+| `database/migrations/0003_create_business_members.sql` | Preserved; creates `business_members` (`business_id` FK `ON DELETE CASCADE`, `user_id` FK `ON DELETE RESTRICT`, `role` in `owner`/`operator` defaulting to `operator`, `UNIQUE (business_id, user_id)`, composite `UNIQUE (business_id, id)` for future tenant-consistent FKs, and `business_members_user_id_idx`) |
+| `database/migrations/0004_create_business_locations.sql` | Preserved; creates `business_locations` (`business_id` FK `ON DELETE CASCADE`, trimmed/validated `name`, composite `UNIQUE (business_id, id)`, and case-insensitive `business_locations_business_name_unique` on `(business_id, lower(name))`) |
+| `database/migrations/0005_manage_updated_at.sql` | Preserved; creates `set_updated_at()` using `clock_timestamp()` and `BEFORE UPDATE` triggers on all four core tables |
+| `src/integrations/database/migrations.ts` | Preserved; loads/validates `NNNN_name.sql` files, computes SHA-256 checksums, runs inside `BEGIN ISOLATION LEVEL READ COMMITTED` with `pg_advisory_xact_lock(hashtext(current_database()), hashtext(current_schema()))`, verifies prior history before running pending SQL, rolls back and discards failed clients, and wraps errors in credential-safe `MigrationError` |
+| `src/migrate.ts` & `package.json` (`db:migrate`) | Preserved; builds TypeScript, runs `runMigrations()`, prints applied filenames or up-to-date status without driver/credential leaks, and closes `postgresPool` |
+| `tests/migrations.test.mjs` | Preserved; 18 unit test assertions covering file sorting/checksums, invalid/duplicate/empty migration rejection before connecting, single-client transaction ordering, history mismatch detection, rollback/client-discard on failure at every stage, and sanitized errors |
+| `tests/migrations.integration.test.mjs` | Fixed two test bugs and expanded coverage: replaced `CREATE TEMP TABLE` (which PostgreSQL forbids referencing permanent tables via FK, `42P16`) with a transaction-scoped permanent table inside the isolated test schema; fixed `t.after` cleanup order so `closeDatabasePool()` and `DROP SCHEMA IF EXISTS` run before `observer.end()`; added explicit `pg_indexes`, `schema_migrations` constraint, multiple-`@` email, and padded-name checks |
+
+### Commands and verification evidence
+
+From `backend/`:
+
+```bash
+npm run typecheck
+npm test
+TEST_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5433/onusai' npm test
+DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5433/onusai' npm run db:migrate
+```
+
+Verified results:
+
+- `npm run typecheck` passed with zero errors.
+- Database-independent `npm test` run: **61 passed, 0 failed, 5 skipped** (the 5 live PostgreSQL tests skip as designed without `TEST_DATABASE_URL`).
+- Live PostgreSQL `npm test` run against the running Docker database on `127.0.0.1:5433`: **80 passed, 0 failed, 0 skipped** (all 14 subtests in `migrations.integration.test.mjs` passed, including concurrent CLI advisory-lock serialization, rollback on failed initial/later batches, history tamper rejection, constraints, indexes, `updated_at` triggers, tenant-scoped composite FKs, and cascade/restrict delete behavior).
+- Executed `npm run db:migrate` twice against the running Docker database: first run applied `0001_create_users.sql` through `0005_manage_updated_at.sql`; second run confirmed idempotency (`Database migrations are up to date.`). Direct `pg` inspection confirmed only the `public` schema exists with all 5 tables, all 5 `schema_migrations` checksums, and all 4 `set_updated_at` triggers.
+
+Limitations: migrations implement the forward-only schema for roadmap step 04.01 without down-migrations, staff authentication/sessions (`04.02`), business/location CRUD (`04.03`), assistant configuration (`04.04`), conversations (`04.05`), or PostgreSQL row-level security (`13.01`). Learning remains not assessed.
+
 ## Upcoming phases and next proposed step
 
-The Node.js and FastAPI foundations, basic local health communication, and PostgreSQL connection foundation are verified in their respective records above. Await user review and approval of the next scope. Remaining roadmap items include request correlation IDs/general request validation, the validated mock AI request/response contract, authenticated service communication, and database schema design. No further feature or model integration is authorized by this record.
+The Node.js and FastAPI foundations, basic local health communication, PostgreSQL connection foundation, and PostgreSQL schema/migration system (04.01) are verified in their respective records above. Await user review and approval of the next scope. Remaining roadmap items include staff authentication/sessions and tenant-aware access control (04.02), request correlation IDs/general request validation, the validated mock AI request/response contract, and authenticated service communication. No further feature or model integration is authorized by this record.
 
 | Phase | Planned work | Current state |
 | --- | --- | --- |
 | 01 | Node.js business-service foundation and tests | Approved foundation verified: 01.01 complete; 01.02 error/routing/shutdown portions complete with correlation IDs/general request validation pending; 01.03 foundation tests verified using the built-in runner |
 | 02 | FastAPI AI-service foundation and tests | 02.01 verified with explicitly requested errors/logging/lifespan and proportionate tests; mock contract 02.02 and remaining async-boundary work 02.03 not implemented |
 | 03 | Private backend integration and Gemini baseline | Basic health communication/timeout/error handling verified as the approved subset of 03.01; authentication, delegation, correlation IDs, and Gemini steps remain unimplemented |
-| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | PostgreSQL connectivity/readiness verified as a separately approved foundation; schema/migration steps 04.01–04.05 remain unimplemented |
+| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | PostgreSQL connectivity/readiness and step 04.01 (migration runner, `schema_migrations`, `users`, `businesses`, `business_members`, `business_locations`, `updated_at` triggers) verified; steps 04.02–04.05 remain unimplemented |
 | 05 | React dashboard and staff playground | Not verified; separately appearing scaffold must be inspected at the approved step; steps 05.01–05.03 |
 | 06 | Document lifecycle, durable ingestion jobs, and chunking | Not started; steps 06.01–06.03 |
 | 07 | Embeddings, Qdrant, semantic search, and grounded RAG | Not started; steps 07.01–07.05 |
@@ -373,4 +416,4 @@ After an implementation step, record: what the developer can explain, a design a
 
 ## Approval boundary
 
-Stop after reporting the verified PostgreSQL integration step. Await explicit user approval for the next scope, additional dependencies, schema/ORM/authentication/model integration, frontend changes, or any commit/push. Completing this step does not authorize the next one.
+Stop after reporting the verified PostgreSQL schema and migration system step (04.01). Await explicit user approval for the next scope (such as 04.02 staff sessions and tenant-aware access control), additional dependencies, authentication/model integration, frontend changes, or any commit/push. Completing this step does not authorize the next one.
