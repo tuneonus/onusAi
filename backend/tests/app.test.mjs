@@ -8,6 +8,7 @@ process.env.PORT = '3000';
 process.env.CORS_ORIGIN = 'https://dashboard.example.com,https://demo.example.com';
 process.env.AI_SERVICE_URL = 'http://127.0.0.1:8001';
 process.env.AI_SERVICE_TIMEOUT_MS = '5000';
+process.env.AI_INTERNAL_AUTH_SECRET = 'test-internal-auth-secret-at-least-32-characters';
 process.env.DATABASE_URL = 'postgresql://test:example-password@127.0.0.1:5433/onusai';
 process.env.DATABASE_CONNECTION_TIMEOUT_MS = '5000';
 process.env.DATABASE_IDLE_TIMEOUT_MS = '30000';
@@ -55,6 +56,24 @@ test('unknown root and API routes return the same JSON 404 contract', async () =
       error: { code: 'NOT_FOUND', message: 'Route not found.' },
     });
   }
+});
+
+test('X-Request-Id middleware preserves valid correlation IDs and replaces invalid ones', async () => {
+  const propagated = await fetch(`${baseUrl}/api/v1/health`, {
+    headers: { 'x-request-id': 'req-trace-1234' },
+  });
+  assert.equal(propagated.status, 200);
+  assert.equal(propagated.headers.get('x-request-id'), 'req-trace-1234');
+  await propagated.arrayBuffer();
+
+  const generated = await fetch(`${baseUrl}/api/v1/health`, {
+    headers: { 'x-request-id': 'bad id!' },
+  });
+  assert.equal(generated.status, 200);
+  const generatedId = generated.headers.get('x-request-id');
+  assert.match(generatedId, /^[0-9a-f-]{36}$/);
+  assert.notEqual(generatedId, 'bad id!');
+  await generated.arrayBuffer();
 });
 
 test('configured origins receive CORS headers; other origins receive JSON 403', async () => {

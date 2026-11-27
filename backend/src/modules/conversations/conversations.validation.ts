@@ -8,6 +8,7 @@ import {
   type ConversationStatus,
   type CreateConversationInput,
   type CreateMessageInput,
+  type CreateTurnInput,
   type ListConversationsFilter,
   type ListMessagesQuery,
   type MessageMetadata,
@@ -27,6 +28,8 @@ const CREATE_CONVERSATION_FIELDS = new Set([
 const UPDATE_CONVERSATION_FIELDS = new Set(['status']);
 
 const CREATE_MESSAGE_FIELDS = new Set(['role', 'content', 'metadata', 'idempotencyKey']);
+const CREATE_TURN_FIELDS = new Set(['content', 'idempotencyKey']);
+const MAX_TURN_CONTENT_LENGTH = 4000;
 
 const STAFF_SUBMITTABLE_ROLES = new Set<string>(['user', 'operator']);
 const MAX_METADATA_KEYS = 16;
@@ -291,6 +294,42 @@ export function validateCreateMessageInput(
     role: record.role as StaffSubmittableMessageRole,
     content,
     metadata: validateMessageMetadata(record.metadata),
+    idempotencyKey: resolveIdempotencyKey(record.idempotencyKey, idempotencyHeader),
+  };
+}
+
+export function validateCreateTurnInput(
+  body: unknown,
+  idempotencyHeader: string | undefined,
+): CreateTurnInput {
+  const record = assertPlainObject(body, 'Request body must be a JSON object.');
+
+  if ('role' in record) {
+    throw new HttpError(
+      403,
+      'FORBIDDEN_MESSAGE_ROLE',
+      'Clients cannot specify message roles or create assistant messages directly.',
+    );
+  }
+
+  assertAllowedKeys(record, CREATE_TURN_FIELDS, 'Request body contains unsupported fields.');
+
+  if (typeof record.content !== 'string') {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'content must be a string.');
+  }
+
+  const content = record.content.trim();
+
+  if (content.length < 1 || content.length > MAX_TURN_CONTENT_LENGTH) {
+    throw new HttpError(
+      400,
+      'VALIDATION_ERROR',
+      `content must be between 1 and ${MAX_TURN_CONTENT_LENGTH} characters.`,
+    );
+  }
+
+  return {
+    content,
     idempotencyKey: resolveIdempotencyKey(record.idempotencyKey, idempotencyHeader),
   };
 }

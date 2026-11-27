@@ -25,14 +25,15 @@ Last updated: 27 November 2026 (Asia/Kolkata). This record separates repository 
 | Requirements and design | Documentation verified in 00.03; foundations and health communication verified below, business/AI product features remain planned |
 | Applications | Dashboard scaffold/dependencies observed during verification, outside this step's changes; not reviewed or verified. Other frontend directories remain empty. |
 | Node.js business service | Foundation, native-fetch AI health client, PostgreSQL connection pool/readiness, staff authentication/sessions/CSRF, tenant-aware owner/operator authorization, business profile & location CRUD (`04.03`), versioned assistant configuration/tool scopes/knowledge visibility/centralized branding (`04.04`), and persistent conversation/message records & retention/deletion contract (`04.05`) verified. No public registration, OAuth, visitor widget sessions, or AI workflows yet. |
-| FastAPI service | Foundation verified; its existing `/api/v1/health` is called by Node.js. No Python source changes were required for basic communication. |
+| FastAPI service | Foundation, internal service authentication (`03.01`), private AI respond contract (`02.02` / `03.02`), `X-Request-Id` correlation middleware, delegation binding, request body limits (`413`), deadline enforcement (`504`), async-boundary helpers (`02.03` / `03.02`), and direct async Google Gemini integration (`03.03`) with `google-genai==3.6.1`, prompt versioning (`respond-v1`), usage capture, safety abstention, and explicit `mock` mode verified. |
 | PostgreSQL | Node.js pool/readiness, SQL migration runner (`backend/src/integrations/database/migrations.ts`, `backend/src/migrate.ts`), `schema_migrations`, core/extended tenant schema (`users`, `businesses`, `business_members`, `business_locations`), auth schema (`user_credentials`, `staff_sessions`, `auth_login_attempts`), assistant schema (`assistants`, `assistant_versions`, `assistant_version_knowledge_locations`), and conversation schema (`conversations`, `conversation_messages`) verified against the running Docker database on host port 5433 (migrations `0001`–`0015`). No ORM or row-level security yet. |
-| Qdrant, Redis | Docker readiness previously reported by the user; no application integration added or readiness checks repeated in the PostgreSQL step |
-| Node.js-to-FastAPI communication | Local health contract verified with configurable URL/timeout, runtime response validation, safe errors, and real communication between both backend processes |
-| Gemini, LangChain, LangGraph, MCP, LangSmith | Not integrated; no live-model calls, agents, embeddings, traces, or experiments |
-| Business/AI features | Phase `04` backend persistence & access foundations (`04.01`–`04.05`) verified; no visitor widget sessions, knowledge ingestion, RAG, leads, bookings, approvals, or analytics yet |
+| Qdrant, Redis | Docker readiness previously reported by the user; no application integration added or readiness checks repeated in this step |
+| Node.js-to-FastAPI communication | Authenticated service-to-service communication (`03.01`), `X-Request-Id` correlation propagation (`01.02`), scoped JWT delegation binding, request deadlines, timeout/rate-limit handling, strict `respond-v1` contract (`02.02` / `03.02`), and Node.js playground turn orchestration (`03.03`) verified end-to-end. |
+| Gemini, LangChain, LangGraph, MCP, LangSmith | Direct async `google-genai` SDK integration (`03.03`) and live synthetic `gemini-3.5-flash-lite` end-to-end baseline (`03.04`) verified (`grounded: false` until RAG exists); LangChain, LangGraph, MCP, and LangSmith remain unimplemented |
+| Business/AI features | Phase `04` (`04.01`–`04.05`) and Phase `03` (`03.01`–`03.04`) verified; no visitor widget sessions, knowledge ingestion, RAG, leads, bookings, approvals, or analytics yet |
 | Centralized branding configuration | Public platform branding centralized in `packages/branding/` (`branding.json`, `index.js`, `index.d.ts`), consumed by `backend/src/config/branding.ts`, and exposed via `GET /api/v1/branding`; AI service title remains explicit in `Settings.app_name` |
-| Tests | 119 Node.js tests passed with live PostgreSQL checks enabled (0 failed, 0 skipped). Database-independent Node.js run: 80 passed, 9 live integration checks skipped as designed. (16 existing FastAPI tests were verified in an earlier step and not re-run here because Python files were unchanged.) |
+| Tests | Step `03.04` live synthetic baseline (`gemini-3.5-flash-lite` over Node.js → FastAPI → Gemini → PostgreSQL) passed after Step `03.03`'s **42** FastAPI tests and **128** Node.js + live PostgreSQL tests. |
+| Dependencies | FastAPI virtual environment has `google-genai==3.6.1` installed and pinned in `ai-backend/requirements.txt`; no npm dependencies changed. |
 | Docker, CI/CD, deployment | Existing `compose.yaml` and running data-service containers preserved; application containerization, CI/CD, and public deployment not implemented in this step |
 | Dependencies | PostgreSQL step installed `pg` and development-only `@types/pg` after explicit user approval; backend manifest/lockfile updated. Other existing dependencies preserved. Dashboard dependencies remain unverified. |
 
@@ -586,25 +587,150 @@ All conversation endpoints live under `/api/v1/businesses/:businessId/conversati
 - **Completed in Phase 04 (`04.01`–`04.05`)**: Versioned PostgreSQL migrations (`0001`–`0015`), staff session auth/CSRF/lockouts/RBAC, business profile & location CRUD with timezone/hours validation and soft-archival, versioned assistant configuration/tool scopes/knowledge visibility/`packages/branding`, and persistent playground conversations/messages with deterministic ordering, pagination, idempotency, and soft-delete/purge contracts.
 - **Deferred / incomplete outside Phase 04**: Automated scheduled cleanup for expired `retain_until`, `staff_sessions`, and `auth_login_attempts` rows; cross-store deletion covering Qdrant/Redis/LangGraph checkpoints once introduced; PostgreSQL Row-Level Security (`13.01`); `'visitor'` channel creation & visitor sessions (`12.01`); automated `'assistant'`/`'system'` AI message generation, RAG, and frontend screens (`05+`).
 
+## Roadmap reorganization and secure internal service authentication (03.01) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and design
+
+1. **Roadmap reorganization (`docs/ROADMAP.md`, `docs/JD_COVERAGE.md`)**: Reordered remaining unstarted work after Phase `04` using a backend-first, AI-first, dependency-based sequence so internal auth, LLM integration (`Phase 03`), document ingestion (`Phase 05`), RAG/Qdrant (`Phase 06`), LangChain/tools (`Phase 07`), LangGraph/HITL (`Phase 08`), Redis/MCP/webhooks (`Phase 09`), and LangSmith/eval/analytics (`Phase 10`) precede frontend applications (`Phase 11` React dashboard, `Phase 12` chat widget/demo). Preserved all `FR-01`–`FR-16` requirements, tech stack, verified steps, and pending statuses without marking incomplete items complete.
+2. **Authentication mechanism (`HS256` short-lived signed JWT)**: Selected dependency-free `HMAC-SHA256` JWTs signed by Node.js (`node:crypto`) and verified in Python (`hmac`, `hashlib`, `base64`, `json`), avoiding third-party JWT libraries and keeping zero new runtime dependencies. A static pre-shared bearer key was rejected because short-lived signed tokens enforce bounded expiration (`iat`/`exp`), issuer/audience binding (`iss`/`aud`), unique token IDs (`jti`), and per-route scopes (`scope`) while preparing directly for scoped tenant/delegation claims in `03.02`.
+3. **Configuration validation (fail-closed)**: Both services require `AI_INTERNAL_AUTH_SECRET` (>= 32 characters, no surrounding whitespace, no hardcoded default in code), `AI_INTERNAL_AUTH_ISSUER` (default `onusai-backend`), and `AI_INTERNAL_AUTH_AUDIENCE` (default `onusai-ai-backend`). Node.js bounds `AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS` (`1`–`300`, default `60`); FastAPI bounds `AI_INTERNAL_AUTH_MAX_TTL_SECONDS` (`1`–`3600`, default `300`) and `AI_INTERNAL_AUTH_CLOCK_SKEW_SECONDS` (`0`–`60`, default `0`), storing the secret as Pydantic `SecretStr` and rejecting invalid configs without echoing secret values.
+4. **Protected boundary and safe errors**: FastAPI keeps `GET /api/v1/health` as unauthenticated process liveness and adds `GET /api/v1/internal/health` protected by `require_internal_service_auth("ai:health")` returning `Cache-Control: no-store`. Missing, malformed, unsupported-algorithm (`alg != HS256` / `typ != JWT`), invalid-signature, invalid-claim, or expired tokens return `401` (`WWW-Authenticate: Bearer`) without secret/token leakage; valid tokens missing the required scope return `403`. Node.js `getAiHealth()` signs a fresh `ai:health` token for `/api/v1/internal/health` and maps upstream `401`/`403` to `502 AI_SERVICE_AUTH_FAILED` without logging tokens or upstream error bodies.
+
+### New and updated files
+
+| File | Responsibility |
+| --- | --- |
+| `docs/ROADMAP.md` & `docs/JD_COVERAGE.md` | Reorganized remaining phases to backend-first, AI-first order and synchronized step references |
+| `backend/src/config/env.ts` & `backend/.env.example` | Validated `AI_INTERNAL_AUTH_SECRET`, `AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS`, `AI_INTERNAL_AUTH_ISSUER`, `AI_INTERNAL_AUTH_AUDIENCE` |
+| `backend/src/integrations/ai/ai-auth.ts` | Pure `signInternalServiceToken` and `createInternalServiceToken` using `node:crypto` `HS256` |
+| `backend/src/integrations/ai/ai-client.ts` & `backend/src/modules/ai/ai.routes.ts` | Sends signed `Bearer` token to `/api/v1/internal/health`, handles `401`/`403` safely as `502 AI_SERVICE_AUTH_FAILED`, sets `Cache-Control: no-store` |
+| `ai-backend/app/core/config.py` & `ai-backend/.env.example` | Validates `AI_INTERNAL_AUTH_SECRET` (`SecretStr`, >= 32 chars), issuer, audience, max TTL, and clock skew |
+| `ai-backend/app/core/internal_auth.py` | Constant-time HS256 JWT verification (`verify_internal_service_token`) and `require_internal_service_auth` FastAPI dependency |
+| `ai-backend/app/api/v1/internal.py` & `ai-backend/app/api/v1/router.py` | Mounts scope-protected `GET /api/v1/internal/health` under `/api/v1` |
+| `backend/tests/ai.test.mjs`, `env.test.mjs`, `app.test.mjs`, `server.test.mjs`, and existing test envs | Cross-language HS256 fixture test, signer unit tests, `401`/`403` safe-error tests, config/startup secret checks, and live Node-to-FastAPI subprocess test |
+| `ai-backend/tests/test_internal_auth.py`, `test_config.py`, `test_application.py` | Config validation tests, HS256 edge-case tests (`alg: none`, boolean timestamps, TTL/expiry, clock skew, scopes, secret redaction), cross-language fixture verification, and live HTTP tests |
+
+### Commands and verification evidence
+
+- `cd ai-backend && .venv/bin/python -m unittest discover -s tests -v`: **27 passed, 0 failed** (covers config validation, `SecretStr` redaction, `HS256` verification, expiration/clock skew, scopes, cross-language fixture matching Node.js output, and live HTTP `/api/v1/internal/health` allow/deny checks).
+- `cd ai-backend && .venv/bin/python -m compileall -q app tests && .venv/bin/python -m pip check`: passed (`No broken requirements found.`).
+- `cd backend && npm run typecheck && npm test`: **84 passed, 0 failed, 9 skipped** (database-independent run with `TEST_DATABASE_URL` unset; includes cross-language JWT fixture verification, upstream `401`/`403` safe handling, startup rejection of invalid/missing secrets, and live subprocess Node.js -> FastAPI authenticated health and mismatched-secret rejection).
+
+Limitations: `TEST_DATABASE_URL` was not set during this step's run, so the 9 existing PostgreSQL integration tests skipped as designed (no database schema or PostgreSQL integration code changed in this step); Node-to-FastAPI transport uses local loopback HTTP (TLS is deferred until deployment); no `jti` replay cache is enforced in FastAPI yet (acceptable for stateless short-lived health/read checks; mutating callbacks/approvals use idempotency keys and replay protection in later phases); no correlation IDs or AI chat payload contracts exist yet (scheduled next in `03.02`).
+
+## Private AI contract, correlation IDs, scoped delegation, deadlines, and async boundaries (03.02) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and design
+
+1. **Request correlation IDs (`01.02` completed)**: Added `backend/src/middlewares/request-id.ts` (`X-Request-Id` validated against `^[A-Za-z0-9._-]{8,64}$`, generating a UUIDv4 otherwise) and `ai-backend/app/middleware/request_id.py` (pure ASGI middleware binding `request_id` to `request.state`, `contextvars` log filter, and response headers, with fallback propagation in `unhandled_exception_handler`). Node.js propagates `X-Request-Id` on all FastAPI requests.
+2. **Shared Node-to-FastAPI AI contract (`02.02` & `03.02` completed)**: Added canonical fixture `packages/ai-contract/respond-v1.fixture.json`, strict TypeScript/runtime validator `backend/src/integrations/ai/ai-contract.ts`, and strict Pydantic schemas `ai-backend/app/modules/respond/schemas.py` (`extra="forbid"`, `StrictInt`/`StrictBool`/`StrictFloat`, camelCase serialization). Rejects schema drift, `staff_only` knowledge on `visitor` channel, and message counts exceeding `maxContextMessages`. `POST /api/v1/internal/respond` returns `mode: "mock"`, `grounded: false` without calling Gemini.
+3. **Scoped delegation binding**: Extended `backend/src/integrations/ai/ai-auth.ts` to embed `AiDelegationClaims` (`businessId`, `locationId`, `assistantId`, `assistantVersionId`, `conversationId`, `channel`, `actorType`, `actorId`, `allowedTools`, `allowedKnowledgeScopes`, `knowledgeLocationScope`, `knowledgeLocationIds`) inside the signed `HS256` JWT (`scope: "ai:respond"`). FastAPI `verify_delegation_binding` rejects tokens missing `delegation` or requests whose body context differs from the signed claims with HTTP `403`, mapped safely in Node.js to `502 AI_SERVICE_DELEGATION_REJECTED`.
+4. **Deadlines, body limits, and async boundaries (`02.03` completed)**: Node.js `requestAiResponse()` computes a bounded `timeoutMs` (`1..AI_SERVICE_TIMEOUT_MS`), sets `deadlineAtMs`, passes `AbortSignal.timeout(timeoutMs)`, and caps token TTL to the hop budget. FastAPI `MaxBodySizeMiddleware` enforces `AI_INTERNAL_MAX_REQUEST_BYTES` (`262144` default) across both `Content-Length` and streamed/chunked bodies (`413`), enforces `remaining_ms` (`504` if expired, `422` if > `AI_INTERNAL_MAX_DEADLINE_MS`), and isolates CPU-bound work (`run_cpu_bound` via `anyio.to_thread.run_sync`) and deadline cancellation (`run_with_deadline` via `asyncio.wait_for`) in `ai-backend/app/core/async_boundary.py`.
+
+### New and updated files
+
+| File | Responsibility |
+| --- | --- |
+| `packages/ai-contract/respond-v1.fixture.json` | Canonical v1.0 request/response fixture shared by Node.js and Python tests |
+| `backend/src/middlewares/request-id.ts`, `app.ts`, `error-handler.ts`, `types/express.d.ts` | Validates/generates `X-Request-Id`, sets response header, and attaches `requestId` to 500 error logs |
+| `backend/src/integrations/ai/ai-contract.ts`, `ai-auth.ts`, `ai-client.ts`, `modules/ai/ai.routes.ts` | Strict `respond-v1` contract validation, delegation JWT signing, bounded deadlines, correlation propagation, and safe `401`/`403`/`504` mappings |
+| `ai-backend/app/core/config.py` & `ai-backend/.env.example` | Adds validated `AI_INTERNAL_MAX_REQUEST_BYTES` (`1024..1048576`) and `AI_INTERNAL_MAX_DEADLINE_MS` (`100..300000`) |
+| `ai-backend/app/middleware/request_id.py`, `body_limit.py`, `core/logging.py`, `core/exceptions.py`, `main.py` | ASGI `X-Request-Id` propagation + log context filter, streaming-safe `413` body-size enforcement, and safe `500` correlation header |
+| `ai-backend/app/core/async_boundary.py` & `app/modules/respond/*` | Thread-pool offloading (`run_cpu_bound`), deadline cancellation (`run_with_deadline`), strict schemas, and non-LLM mock responder |
+| `ai-backend/app/core/internal_auth.py` & `app/api/v1/internal.py` | Parses/validates `delegation` claims, enforces `verify_delegation_binding`, and exposes `POST /api/v1/internal/respond` |
+| `backend/tests/ai.test.mjs`, `app.test.mjs` & `ai-backend/tests/test_ai_contract_and_async.py`, `test_application.py`, `test_config.py` | Cross-language contract/delegation/correlation/deadline/body-limit/async-boundary tests and live Node-to-FastAPI integration verification |
+
+### Commands and verification evidence
+
+- `cd ai-backend && .venv/bin/python -m unittest discover -s tests -v && .venv/bin/python -m compileall -q app tests && .venv/bin/python -m pip check`: **35 passed, 0 failed** (`compileall` and `pip check` clean; verifies shared fixture, `X-Request-Id` across `200`/`413`/`500`, missing/forged delegation `403`, schema drift `422`, expired/excessive deadlines `504`/`422`, `Content-Length` & chunked `413`, worker-thread CPU offloading without event-loop starvation, and coroutine deadline cancellation).
+- `cd backend && npm run typecheck && TEST_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5433/onusai' npm test`: **126 passed, 0 failed, 0 skipped** (all unit tests, live PostgreSQL `04.01`–`04.05` regression tests, shared contract fixture validation, delegation/timeout/error mapping tests, and live Node-to-FastAPI end-to-end `respond` + forged-delegation checks passed).
+
+Limitations: `POST /api/v1/internal/respond` returns deterministic `mode: "mock"`, `grounded: false` responses until Gemini integration (`03.03`); backend conversation turn orchestration linking persisted `assistants` and `conversations` tables to `requestAiResponse()` is scheduled in `03.03`; transport remains local loopback HTTP without TLS until deployment.
+
+## Direct Google Gemini integration and Node.js turn orchestration (03.03) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally (mocked SDK)**. Learning: **not assessed**.
+
+### Approved scope and design
+
+1. **Configuration & SDK pinning (`ai-backend/requirements.txt`, `app/core/config.py`, `.env.example`)**: Pinned `google-genai==3.6.1` and its installed runtime dependencies in `requirements.txt`. Added `AI_GENERATION_MODE` (`"gemini" | "mock"`, default `"gemini"`), `AI_GEMINI_API_KEY` (`SecretStr`, required when `gemini` mode is active, validated without echoing input), and `AI_GEMINI_MODEL` (default `"gemini-2.5-flash-lite"`, free-tier-eligible supported model). Mock mode remains explicit (`AI_GENERATION_MODE=mock`) for deterministic offline testing.
+2. **Async Gemini adapter & prompt versioning (`app/integrations/gemini_client.py`, `app/modules/respond/prompts.py`, `service.py`)**: Uses `google.genai.Client(api_key=...).aio.models.generate_content(...)` with versioned prompts (`PROMPT_VERSION = "respond-v1"`), system instructions, chronological `types.Content` conversation mapping (`user`/`model` + labeled `[Operator note]`/`[System note]`), `temperature`, `max_output_tokens`, and token usage extraction (`inputTokens`, `outputTokens`, `totalTokens`). Handles prompt/candidate safety blocks via safe abstention (`status: "abstained"`, returning the assistant's `fallbackMessage`), maps rate limits (`429`), upstream timeouts (`408`/`504`), API/auth errors (`502`), and unexpected client errors safely without exposing API keys or conversation text in logs or HTTP responses.
+3. **Node.js turn orchestration (`backend/src/modules/conversations/*`, `integrations/ai/*`)**: Added `POST /api/v1/businesses/:businessId/conversations/:conversationId/turns` (`requireAuth`, `requireCsrf`, `requireTenantMembership(['owner', 'operator'])`). Validates `{ content, idempotencyKey? }` strictly while rejecting any client-supplied `role` (`403 FORBIDDEN_MESSAGE_ROLE`), verifies `channel === 'playground'` and `status === 'active'` (`409 CONVERSATION_NOT_ACTIVE` during `pending_human`/`human_active`/`closed`), loads the conversation's **bound `assistantVersionId`** (preserving historical version consistency after newer assistant publishes) and bounded context messages (`<= maxContextMessages`), calls `requestAiResponse()`, maps upstream `429` to `429 AI_RATE_LIMITED`, and atomically persists both `'user'` and `'assistant'` messages (`authorUserId = null` for assistant) with paired SHA-256 idempotency keys (`turn-reply:<sha256>`) inside a single `FOR UPDATE` transaction.
+
+### New and updated files
+
+| File | Responsibility |
+| --- | --- |
+| `ai-backend/requirements.txt` | Pins `google-genai==3.6.1` and its installed dependencies |
+| `packages/ai-contract/respond-v1.fixture.json` & `backend/src/integrations/ai/ai-contract.ts` | Extends `AiRespondResponse` with `mode` (`'mock' \| 'gemini'`), `model`, and `promptVersion` |
+| `backend/src/integrations/ai/ai-client.ts` | Maps upstream `429` cleanly to `429 AI_RATE_LIMITED` |
+| `backend/src/modules/conversations/*` | Adds `validateCreateTurnInput`, `findTurnByIdempotencyKey`, `findRecentTurnContextMessages`, `persistConversationTurn`, `executeStaffConversationTurn`, and `POST .../turns` |
+| `ai-backend/app/core/config.py`, `ai-backend/.env.example`, `ai-backend/app/main.py` | Adds validated Gemini settings, initializes `GeminiAdapter` in `gemini` mode, and closes `client.aio` cleanly on shutdown |
+| `ai-backend/app/modules/respond/prompts.py`, `schemas.py`, `service.py`, `app/api/v1/internal.py` | Versioned prompt builder, `GeminiAdapter` wiring, explicit `mock` vs `gemini` routing |
+| `ai-backend/app/integrations/gemini_client.py` | Async `google-genai` wrapper with usage capture, safety abstention, and key-safe error handling |
+| `ai-backend/tests/test_gemini_adapter.py`, `test_config.py`, `test_application.py`, `test_internal_auth.py`, `test_ai_contract_and_async.py` | Offline mocked-SDK tests for generation, usage, safety blocks, 429/502/504 errors, deadlines, secret redaction, and explicit mock mode |
+| `backend/tests/ai.test.mjs`, `conversations.unit.test.mjs`, `conversations.integration.test.mjs` | Unit and live PostgreSQL integration tests for `POST .../turns`, idempotent replay/conflict, version consistency, context history, status gating, failure atomicity, and role/tenant protection |
+
+### Commands and verification evidence
+
+- `cd ai-backend && .venv/bin/python -m unittest discover -s tests -v && .venv/bin/python -m compileall -q app tests && .venv/bin/python -m pip check`: **42 passed, 0 failed** (`compileall` and `pip check` clean).
+- `cd backend && npm run typecheck && TEST_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5433/onusai' npm test`: **128 passed, 0 failed, 0 skipped** (all unit tests, live PostgreSQL `04.01`–`04.05` regressions, and new `POST .../turns` integration checks passed).
+- Environment check (keys only, values unread): `ai-backend/.env` is not present on disk yet (`backend/.env` currently contains `GEMINI_API_KEY`, `AI_GEMINI_MODEL`, `AI_INTERNAL_AUTH_SECRET`). `ai-backend/.env` must be populated with `AI_GEMINI_API_KEY`, `AI_GEMINI_MODEL`, and `AI_INTERNAL_AUTH_SECRET` before running the live smoke test in Step `03.04`.
+
+Limitations: All Gemini tests in Step `03.03` used a mocked `google-genai` async client; no live call to the Google Gemini API was performed (reserved for Step `03.04`). Answers remain ungrounded (`grounded: false`) until RAG is implemented in Phase `06`. No Git commit or push was performed.
+
+## Live Gemini smoke test and baseline (03.04) — verified approved scope
+
+Date: 27 November 2026 (Asia/Kolkata). Implementation: **verified locally against live Gemini API and PostgreSQL**. Learning: **not assessed**.
+
+### Environment & model verification
+
+- Verified `ai-backend/.env` (`AI_GENERATION_MODE=gemini`, `AI_GEMINI_MODEL=gemini-3.5-flash-lite`, `AI_GEMINI_API_KEY` length `53`, `AI_INTERNAL_AUTH_SECRET`) and `backend/.env` (`DATABASE_URL`, `AI_SERVICE_URL`, `AI_INTERNAL_AUTH_SECRET`, no `GEMINI_API_KEY` present) without printing secrets.
+- Confirmed `AI_INTERNAL_AUTH_SECRET` matches across both `.env` files and `client.models.get(model="gemini-3.5-flash-lite")` resolved `models/gemini-3.5-flash-lite` (`Gemini 3.5 Flash Lite`).
+
+### Synthetic end-to-end baseline (`Node.js → FastAPI → Gemini → PostgreSQL`)
+
+Executed against compiled `backend/dist/server.js`, real `uvicorn app.main:app` (reading `ai-backend/.env` in live `gemini` mode with zero mock fallback), and an isolated migrated PostgreSQL schema (`0001`–`0015`) using synthetic business `"Northstar Dental Clinic"` and synthetic assistant `"Northstar Assistant"` (`promptVersion: respond-v1`, `temperature: 0.2`, `maxOutputTokens: 160`):
+
+| Check | Result | Model / Mode | HTTP Latency | AI Latency | Tokens (In / Out / Total) |
+| --- | --- | --- | --- | --- | --- |
+| Authenticated health (`GET /api/v1/ai/health`) | `200 {"status":"ok"}` | Service auth only | — | — | `0 / 0 / 0` |
+| Turn 1 (`POST .../turns`, `Idempotency-Key: smoke-turn-1`) | `201`, coherent ungrounded reply acknowledging no live documents/records (`grounded: false`) | `gemini-3.5-flash-lite` (`gemini`) | `2937` ms | `2906` ms | `188 / 35 / 223` |
+| Idempotent replay (Turn 1 repeated) | `200`, `idempotentReplay: true`, same message IDs, `0` Gemini calls | Cached DB replay | — | — | `0 / 0 / 0` |
+| Turn 2 (`POST .../turns`, context recall) | `201`, recalled synthetic visitor `"Riley"` and `"Northstar Dental Clinic"` from persisted Turn 1 history (`grounded: false`) | `gemini-3.5-flash-lite` (`gemini`) | `672` ms | `638` ms | `243 / 24 / 267` |
+| PostgreSQL persistence | `4` rows in `conversation_messages` (`seq 1..4`: `user`, `assistant`, `user`, `assistant`) | — | — | — | — |
+| Error handling & privacy | Unauth FastAPI `401`; stopped FastAPI → Node `503 AI_SERVICE_UNAVAILABLE` with `0` orphan DB rows; zero secret leakage in logs/DB | — | — | — | — |
+
+*(Answers are explicitly ungrounded (`grounded: false`) until document ingestion and RAG are implemented in Phases `05`–`06`.)*
+
+### Phase 03 completion review & limitations
+
+- **Completed in Phase 03 (`03.01`–`03.04`)**: Scoped `HS256` internal service auth (`03.01`), `respond-v1` cross-language contract, `X-Request-Id` correlation propagation (`01.02`), delegation binding, deadlines/body limits, FastAPI async boundaries (`02.02`–`02.03`, `03.02`), direct async `google-genai` integration + Node.js `POST .../turns` persistence (`03.03`), and live `gemini-3.5-flash-lite` synthetic baseline (`03.04`).
+- **Limitations**: Live test covered 2 synthetic turns on `gemini-3.5-flash-lite`; no RAG grounding, document uploads, tool calling, LangChain, LangGraph, Redis caching, LangSmith tracing, or frontend UI exists yet. Temporary test schema was dropped after verification; no `dashboard/` files, commits, or pushes were made.
+
 ## Upcoming phases and next proposed step
 
-Phase `04` (`04.01`–`04.05`) is verified in the records above. Await user review and approval before any Git commit/push or starting Phase `05` (`05.01` — minimal React/TypeScript dashboard with shared branding, accessible shell, and approved build tooling). No further feature, commit, or push is authorized by this record.
+Phase `03` (`03.01`–`03.04`) is verified complete. Await user review and approval before any Git commit/push or starting **Phase `05` — Step `05.01`** (Text/Markdown upload metadata and bounded text storage with version/state transitions, `FR-05`). No further feature, commit, or push is authorized by this record.
 
 | Phase | Planned work | Current state |
 | --- | --- | --- |
-| 01 | Node.js business-service foundation and tests | Approved foundation verified: 01.01 complete; 01.02 error/routing/shutdown portions complete with correlation IDs/general request validation pending; 01.03 foundation tests verified using the built-in runner |
-| 02 | FastAPI AI-service foundation and tests | 02.01 verified with explicitly requested errors/logging/lifespan and proportionate tests; mock contract 02.02 and remaining async-boundary work 02.03 not implemented |
-| 03 | Private backend integration and Gemini baseline | Basic health communication/timeout/error handling verified as the approved subset of 03.01; authentication, delegation, correlation IDs, and Gemini steps remain unimplemented |
-| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | Steps `04.01`–`04.05` (migrations `0001`–`0015`) verified; automated retention purge job, cross-store cleanup, RLS (`13.01`), and visitor sessions (`12.01`) remain deferred to their respective phases |
-| 05 | React dashboard and staff playground | Not verified; separately appearing scaffold must be inspected at the approved step; steps 05.01–05.03 |
-| 06 | Document lifecycle, durable ingestion jobs, and chunking | Not started; steps 06.01–06.03 |
-| 07 | Embeddings, Qdrant, semantic search, and grounded RAG | Not started; steps 07.01–07.05 |
-| 08 | LangChain, lead/slot operations, function/tool proposals | Not started; steps 08.01–08.04 |
-| 09 | LangGraph, short-term memory, approvals, bookings, and handoff | Not started; steps 09.01–09.04 |
-| 10 | Redis, semantic caching, MCP, REST/webhook asynchronous integration patterns | Not started; steps 10.01–10.04 |
-| 11 | LangSmith, evaluation, guardrail improvements, and basic analytics | Not started; steps 11.01–11.04 |
-| 12 | Scoped visitor API, widget, and synthetic demo site | Not started; steps 12.01–12.03 |
-| 13 | Consolidated testing/security, Docker, GitHub Actions, deployment readiness, and MVP review | Not started; steps 13.01–13.05 |
+| 01 | Node.js business-service foundation and tests | Verified (`01.01`–`01.03` complete) |
+| 02 | FastAPI AI-service foundation and tests | Verified (`02.01`–`02.03` complete) |
+| 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | Steps `04.01`–`04.05` (migrations `0001`–`0015`) verified; automated retention purge job, cross-store cleanup, RLS (`13.01`), and visitor sessions (`12.01`) remain deferred |
+| 03 | Internal service auth, AI contracts, and Google Gemini | **Verified complete** (`03.01`–`03.04` verified, including live `gemini-3.5-flash-lite` baseline; answers labeled `grounded: false` until Phase `06`) |
+| 05 | Documents, ingestion, and chunking (Backend + AI Worker) | Not started; steps `05.01`–`05.03` |
+| 06 | Embeddings, Qdrant, semantic search, and grounded RAG | Not started; steps `06.01`–`06.04` |
+| 07 | LangChain, deterministic business operations, and tool calling | Not started; steps `07.01`–`07.04` |
+| 08 | LangGraph, memory, and human-in-the-loop approvals (Backend) | Not started; steps `08.01`–`08.03` |
+| 09 | Redis, semantic caching, MCP, and asynchronous webhooks | Not started; steps `09.01`–`09.04` |
+| 10 | LangSmith, evaluation, guardrails, and backend analytics | Not started; steps `10.01`–`10.04` |
+| 11 | React dashboard and staff interfaces (Frontend) | Not verified; separately appearing `dashboard/` scaffold must be inspected at `11.01`; steps `11.01`–`11.03` |
+| 12 | Chat widget and synthetic demo website (Frontend) | Not started; steps `12.01`–`12.03` |
+| 13 | Consolidated testing/security, Docker, GitHub Actions, deployment readiness, and MVP review | Not started; steps `13.01`–`13.05` |
 | 14 | Optional public website, super-admin, and commercial capabilities | Deferred; separate approval required |
 | 15 | Optional multi-agent, long-term memory, real integrations, and justified fine-tuning experiments | Deferred; separate approval required |
 
@@ -618,4 +744,4 @@ After an implementation step, record: what the developer can explain, a design a
 
 ## Approval boundary
 
-Stop after reporting the verified conversation/message persistence and retention/deletion step (04.05) and Phase 04 verification summary. Await explicit user approval for Git commit/push or starting Phase 05 (dashboard), additional dependencies, AI/model integration, or frontend changes. Completing Phase 04 does not authorize Phase 05.
+Stop after reporting the verified Step `03.04` live baseline and Phase `03` completion review. Await explicit user approval for Git commit/push or starting Phase `05` (`05.01` — Text/Markdown upload metadata and bounded text storage with version/state transitions). Completing Phase `03` does not authorize Phase `05`.

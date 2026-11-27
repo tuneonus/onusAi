@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireTenantMembership } from '../../middlewares/tenant.js';
 import {
   handleCreateConversation,
+  handleCreateConversationTurn,
   handleDeleteConversation,
   handleGetConversation,
   handleListConversationMessages,
@@ -52,5 +53,10 @@ conversationsRouter.post(
   '/:conversationId/messages',
   requireTenantMembership(['owner', 'operator']),
   handlePostConversationMessage,
+);
+conversationsRouter.post(
+  '/:conversationId/turns',
+  requireTenantMembership(['owner', 'operator']),
+  handleCreateConversationTurn,
 );
 

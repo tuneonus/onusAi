@@ -4,6 +4,7 @@ import { validateUuid } from '../auth/auth.validation.js';
 import {
   createStaffConversation,
   deleteTenantConversation,
+  executeStaffConversationTurn,
   getTenantConversationById,
   getTenantConversationMessages,
   getTenantConversations,
@@ -15,6 +16,7 @@ import type { Conversation, ConversationMessage } from './conversations.types.js
 import {
   validateCreateConversationInput,
   validateCreateMessageInput,
+  validateCreateTurnInput,
   validateListConversationsQuery,
   validateListMessagesQuery,
   validateUpdateConversationStatusInput,
@@ -147,6 +149,31 @@ export async function handlePostConversationMessage(req: Request, res: Response)
     businessId: tenant.businessId,
     conversationId,
     message: serializeMessage(result.message),
+    idempotentReplay: !result.created,
+  });
+}
+
+export async function handleCreateConversationTurn(req: Request, res: Response): Promise<void> {
+  res.set('Cache-Control', 'no-store');
+  const auth = requireVerifiedAuth(req);
+  const tenant = requireVerifiedTenant(req);
+  const conversationId = validateUuid(req.params.conversationId, 'conversationId');
+  const input = validateCreateTurnInput(req.body, req.header('idempotency-key'));
+  const result = await executeStaffConversationTurn(
+    tenant,
+    auth,
+    conversationId,
+    input,
+    req.requestId,
+  );
+
+  res.status(result.created ? 201 : 200).json({
+    businessId: tenant.businessId,
+    conversationId: result.conversationId,
+    assistantVersionId: result.assistantVersionId,
+    userMessage: serializeMessage(result.userMessage),
+    assistantMessage: serializeMessage(result.assistantMessage),
+    ai: result.ai,
     idempotentReplay: !result.created,
   });
 }

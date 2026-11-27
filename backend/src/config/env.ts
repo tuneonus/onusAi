@@ -69,6 +69,37 @@ export function validateEnv(values: NodeJS.ProcessEnv) {
     throw new Error('AI_SERVICE_TIMEOUT_MS must be an integer between 1 and 60000.');
   }
 
+  const aiInternalAuthSecret = values.AI_INTERNAL_AUTH_SECRET ?? '';
+
+  if (
+    aiInternalAuthSecret.length < 32 ||
+    aiInternalAuthSecret !== aiInternalAuthSecret.trim()
+  ) {
+    throw new Error(
+      'AI_INTERNAL_AUTH_SECRET must be at least 32 characters without surrounding whitespace.',
+    );
+  }
+
+  const aiInternalAuthTokenTtlSeconds = boundedInt(
+    values,
+    'AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS',
+    60,
+    1,
+    300,
+  );
+  const aiInternalAuthIssuer = nonEmptyBoundedString(
+    values,
+    'AI_INTERNAL_AUTH_ISSUER',
+    'onusai-backend',
+    100,
+  );
+  const aiInternalAuthAudience = nonEmptyBoundedString(
+    values,
+    'AI_INTERNAL_AUTH_AUDIENCE',
+    'onusai-ai-backend',
+    100,
+  );
+
   const databaseUrl = values.DATABASE_URL ?? '';
 
   try {
@@ -101,10 +132,26 @@ export function validateEnv(values: NodeJS.ProcessEnv) {
 
   return {
     port, nodeEnv, corsOrigins, aiServiceUrl, aiServiceTimeoutMs,
+    aiInternalAuthSecret, aiInternalAuthTokenTtlSeconds, aiInternalAuthIssuer, aiInternalAuthAudience,
     databaseUrl, databaseConnectionTimeoutMs, databaseIdleTimeoutMs, databaseQueryTimeoutMs,
     authSessionTtlMs, authLoginMaxAttempts, authLoginWindowMs, authLoginLockoutMs,
     conversationRetentionDays,
   } as const;
+}
+
+function nonEmptyBoundedString(
+  values: NodeJS.ProcessEnv,
+  name: string,
+  defaultValue: string,
+  maxLength: number,
+): string {
+  const value = values[name] ?? defaultValue;
+
+  if (value.length < 1 || value.length > maxLength || value !== value.trim()) {
+    throw new Error(`${name} must be between 1 and ${maxLength} characters without surrounding whitespace.`);
+  }
+
+  return value;
 }
 
 function boundedInt(

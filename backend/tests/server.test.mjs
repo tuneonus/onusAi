@@ -12,6 +12,7 @@ function serverEnvironment(port) {
   return {
     ...process.env, PORT: String(port), NODE_ENV: 'production', CORS_ORIGIN: 'http://localhost:5173',
     AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
+    AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
     DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
     DATABASE_CONNECTION_TIMEOUT_MS: '5000', DATABASE_IDLE_TIMEOUT_MS: '30000',
     DATABASE_QUERY_TIMEOUT_MS: '5000',
@@ -158,6 +159,8 @@ test('invalid AI connection settings prevent startup without exposing their valu
   for (const [name, value] of [
     ['AI_SERVICE_URL', 'http://user:private-value@example.com'],
     ['AI_SERVICE_TIMEOUT_MS', '0'],
+    ['AI_INTERNAL_AUTH_SECRET', 'short-private-value'],
+    ['AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS', '0'],
   ]) {
     const result = spawnSync(process.execPath, ['dist/server.js'], {
       cwd: backendDirectory,

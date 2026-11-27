@@ -4,23 +4,32 @@ import { test } from 'node:test';
 import { parse } from 'dotenv';
 
 // Keep module loading independent of any developer-specific .env values.
+const aiInternalAuthSecret = 'test-internal-auth-secret-at-least-32-characters';
 process.env.PORT = '3000';
 process.env.NODE_ENV = 'test';
 process.env.CORS_ORIGIN = 'http://localhost:5173';
 process.env.AI_SERVICE_URL = 'http://127.0.0.1:8001';
 process.env.AI_SERVICE_TIMEOUT_MS = '5000';
+process.env.AI_INTERNAL_AUTH_SECRET = aiInternalAuthSecret;
 const databaseUrl = 'postgresql://test:example-password@127.0.0.1:5433/onusai';
 process.env.DATABASE_URL = databaseUrl;
 process.env.DATABASE_CONNECTION_TIMEOUT_MS = '5000';
 process.env.DATABASE_IDLE_TIMEOUT_MS = '30000';
 process.env.DATABASE_QUERY_TIMEOUT_MS = '5000';
 const { validateEnv: validateEnvironment } = await import('../dist/config/env.js');
-const validateEnv = (values) => validateEnvironment({ DATABASE_URL: databaseUrl, ...values });
+const validateEnv = (values) =>
+  validateEnvironment({
+    DATABASE_URL: databaseUrl,
+    AI_INTERNAL_AUTH_SECRET: aiInternalAuthSecret,
+    ...values,
+  });
 
 test('unspecified optional settings receive safe development defaults', () => {
   assert.deepEqual(validateEnv({}), {
     port: 3000, nodeEnv: 'development', corsOrigins: ['http://localhost:5173'],
     aiServiceUrl: 'http://127.0.0.1:8001', aiServiceTimeoutMs: 5000,
+    aiInternalAuthSecret, aiInternalAuthTokenTtlSeconds: 60,
+    aiInternalAuthIssuer: 'onusai-backend', aiInternalAuthAudience: 'onusai-ai-backend',
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
     databaseQueryTimeoutMs: 5000, authSessionTtlMs: 28_800_000,
     authLoginMaxAttempts: 5, authLoginWindowMs: 900_000, authLoginLockoutMs: 900_000,
@@ -29,10 +38,15 @@ test('unspecified optional settings receive safe development defaults', () => {
 });
 
 test('valid environment values and multiple origins are parsed', () => {
+  const overrideSecret = 'override-internal-auth-secret-32-chars-minimum';
   const result = validateEnv({
     PORT: '4100', NODE_ENV: 'production',
     CORS_ORIGIN: 'https://dashboard.example.com/, http://localhost:5173',
     AI_SERVICE_URL: 'https://ai.example.com:8443/', AI_SERVICE_TIMEOUT_MS: '2500',
+    AI_INTERNAL_AUTH_SECRET: overrideSecret,
+    AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS: '120',
+    AI_INTERNAL_AUTH_ISSUER: 'custom-backend',
+    AI_INTERNAL_AUTH_AUDIENCE: 'custom-ai-backend',
     AUTH_SESSION_TTL_MS: '60000', AUTH_LOGIN_MAX_ATTEMPTS: '8',
     AUTH_LOGIN_WINDOW_MS: '120000', AUTH_LOGIN_LOCKOUT_MS: '300000',
     CONVERSATION_RETENTION_DAYS: '180',
@@ -41,6 +55,8 @@ test('valid environment values and multiple origins are parsed', () => {
     port: 4100, nodeEnv: 'production',
     corsOrigins: ['https://dashboard.example.com', 'http://localhost:5173'],
     aiServiceUrl: 'https://ai.example.com:8443', aiServiceTimeoutMs: 2500,
+    aiInternalAuthSecret: overrideSecret, aiInternalAuthTokenTtlSeconds: 120,
+    aiInternalAuthIssuer: 'custom-backend', aiInternalAuthAudience: 'custom-ai-backend',
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
     databaseQueryTimeoutMs: 5000, authSessionTtlMs: 60_000,
     authLoginMaxAttempts: 8, authLoginWindowMs: 120_000, authLoginLockoutMs: 300_000,
@@ -68,16 +84,20 @@ test('wildcards, opaque origins, credentials, and URL paths cannot enter the all
 test('the trackable example contains valid non-secret configuration', () => {
   const example = parse(readFileSync(new URL('../.env.example', import.meta.url)));
   assert.deepEqual(Object.keys(example).sort(), [
-    'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL',
+    'AI_INTERNAL_AUTH_AUDIENCE', 'AI_INTERNAL_AUTH_ISSUER', 'AI_INTERNAL_AUTH_SECRET',
+    'AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS', 'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL',
     'AUTH_LOGIN_LOCKOUT_MS', 'AUTH_LOGIN_MAX_ATTEMPTS', 'AUTH_LOGIN_WINDOW_MS', 'AUTH_SESSION_TTL_MS',
     'CONVERSATION_RETENTION_DAYS', 'CORS_ORIGIN', 'DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS',
     'DATABASE_QUERY_TIMEOUT_MS', 'DATABASE_URL', 'NODE_ENV', 'PORT',
   ]);
-  assert.equal(validateEnv(example).port, 3000);
+  assert.equal(validateEnvironment(example).port, 3000);
 });
 
 test('database URLs are required and invalid values never appear in validation errors', () => {
-  assert.throws(() => validateEnvironment({}), /DATABASE_URL must be a PostgreSQL URL/);
+  assert.throws(
+    () => validateEnvironment({ AI_INTERNAL_AUTH_SECRET: aiInternalAuthSecret }),
+    /DATABASE_URL must be a PostgreSQL URL/,
+  );
 
   for (const DATABASE_URL of [
     '', 'private-value', 'https://user:private-value@example.com/db',
@@ -162,12 +182,43 @@ test('auth session and rate-limit settings reject invalid values', () => {
     ['AUTH_LOGIN_WINDOW_MS', ['0', '999', '86400001', ''], ['1000', '86400000']],
     ['AUTH_LOGIN_LOCKOUT_MS', ['0', '999', '86400001', ' '], ['1000', '86400000']],
     ['CONVERSATION_RETENTION_DAYS', ['0', '3651', '-1', '1.5', ''], ['1', '3650']],
+    ['AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS', ['0', '301', '-1', '1.5', ''], ['1', '300']],
   ]) {
     for (const value of invalid) {
       assert.throws(() => validateEnv({ [name]: value }), new RegExp(`${name} must be an integer`));
     }
     for (const value of valid) {
       assert.ok(validateEnv({ [name]: value }));
+    }
+  }
+});
+
+test('internal AI auth secret, issuer, and audience are validated without echoing values', () => {
+  assert.throws(
+    () => validateEnvironment({ DATABASE_URL: databaseUrl }),
+    /AI_INTERNAL_AUTH_SECRET must be at least 32 characters/,
+  );
+
+  for (const AI_INTERNAL_AUTH_SECRET of [
+    '',
+    'short-private-value',
+    'x'.repeat(31),
+    ` ${'private-value'.repeat(3)} `,
+  ]) {
+    assert.throws(() => validateEnv({ AI_INTERNAL_AUTH_SECRET }), (error) => {
+      assert.match(error.message, /AI_INTERNAL_AUTH_SECRET must be at least 32 characters/);
+      assert.ok(!error.message.includes('private-value'));
+      return true;
+    });
+  }
+
+  for (const name of ['AI_INTERNAL_AUTH_ISSUER', 'AI_INTERNAL_AUTH_AUDIENCE']) {
+    for (const value of ['', '   ', ' private-value ', 'x'.repeat(101)]) {
+      assert.throws(() => validateEnv({ [name]: value }), (error) => {
+        assert.match(error.message, new RegExp(`${name} must be between 1 and 100 characters`));
+        assert.ok(!error.message.includes('private-value'));
+        return true;
+      });
     }
   }
 });

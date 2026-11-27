@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { env } from '../../config/env.js';
 import { postgresPool } from '../../integrations/database/postgres.js';
@@ -570,5 +571,237 @@ export async function purgeConversationForTenant(
   );
 
   return Boolean(result.rows[0]);
+}
+
+export function buildAssistantReplyIdempotencyKey(userIdempotencyKey: string): string {
+  const digest = createHash('sha256').update(userIdempotencyKey, 'utf8').digest('hex');
+  return `turn-reply:${digest}`;
+}
+
+async function lookupTurnPairByIdempotency(
+  queryable: Pick<PoolClient, 'query'>,
+  businessId: string,
+  conversationId: string,
+  userIdempotencyKey: string,
+  expectedUserContent: string,
+): Promise<{ userMessage: ConversationMessage; assistantMessage: ConversationMessage } | null> {
+  const userResult = await queryable.query<ConversationMessageRow>(
+    `SELECT ${MESSAGE_COLUMNS}
+     FROM conversation_messages
+     WHERE business_id = $1 AND conversation_id = $2 AND idempotency_key = $3
+     LIMIT 1`,
+    [businessId, conversationId, userIdempotencyKey],
+  );
+
+  const userRow = userResult.rows[0];
+  if (!userRow) {
+    return null;
+  }
+
+  if (userRow.role !== 'user' || userRow.content !== expectedUserContent) {
+    throw new HttpError(
+      409,
+      'IDEMPOTENCY_KEY_CONFLICT',
+      'Idempotency key was already used with a different message payload.',
+    );
+  }
+
+  const assistantKey = buildAssistantReplyIdempotencyKey(userIdempotencyKey);
+  const assistantResult = await queryable.query<ConversationMessageRow>(
+    `SELECT ${MESSAGE_COLUMNS}
+     FROM conversation_messages
+     WHERE business_id = $1 AND conversation_id = $2 AND idempotency_key = $3
+     LIMIT 1`,
+    [businessId, conversationId, assistantKey],
+  );
+
+  const assistantRow = assistantResult.rows[0];
+  if (!assistantRow) {
+    throw new HttpError(
+      409,
+      'IDEMPOTENCY_KEY_CONFLICT',
+      'Idempotency key was already used for a standalone message.',
+    );
+  }
+
+  return {
+    userMessage: mapMessageRow(userRow),
+    assistantMessage: mapMessageRow(assistantRow),
+  };
+}
+
+export async function findTurnByIdempotencyKey(
+  businessId: string,
+  conversationId: string,
+  userIdempotencyKey: string,
+  expectedUserContent: string,
+): Promise<{ userMessage: ConversationMessage; assistantMessage: ConversationMessage } | null> {
+  return lookupTurnPairByIdempotency(
+    postgresPool,
+    businessId,
+    conversationId,
+    userIdempotencyKey,
+    expectedUserContent,
+  );
+}
+
+export async function findRecentTurnContextMessages(
+  businessId: string,
+  conversationId: string,
+  limit: number,
+): Promise<ConversationMessage[]> {
+  const result = await postgresPool.query<ConversationMessageRow>(
+    `SELECT ${MESSAGE_COLUMNS}
+     FROM conversation_messages
+     WHERE business_id = $1 AND conversation_id = $2
+     ORDER BY sequence_number DESC
+     LIMIT $3`,
+    [businessId, conversationId, limit],
+  );
+
+  return result.rows.reverse().map(mapMessageRow);
+}
+
+export async function persistConversationTurn(params: {
+  businessId: string;
+  conversationId: string;
+  authorUserId: string;
+  userContent: string;
+  assistantContent: string;
+  assistantMetadata: MessageMetadata;
+  idempotencyKey: string | null;
+}): Promise<{
+  userMessage: ConversationMessage;
+  assistantMessage: ConversationMessage;
+  created: boolean;
+}> {
+  try {
+    return await runInTransaction(async (client) => {
+      const convLock = await client.query<{
+        id: string;
+        channel: ConversationChannel;
+        status: ConversationStatus;
+      }>(
+        `SELECT id, channel, status
+         FROM conversations
+         WHERE business_id = $1 AND id = $2 AND deleted_at IS NULL
+         FOR UPDATE`,
+        [params.businessId, params.conversationId],
+      );
+
+      const conv = convLock.rows[0];
+      if (!conv) {
+        throw new HttpError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found.');
+      }
+
+      if (conv.channel !== 'playground') {
+        throw new HttpError(
+          403,
+          'FORBIDDEN_CONVERSATION_CHANNEL',
+          'Staff turn endpoint supports playground conversations only.',
+        );
+      }
+
+      if (conv.status !== 'active') {
+        throw new HttpError(
+          409,
+          'CONVERSATION_NOT_ACTIVE',
+          'AI replies are disabled unless the conversation status is active.',
+        );
+      }
+
+      if (params.idempotencyKey !== null) {
+        const existingPair = await lookupTurnPairByIdempotency(
+          client,
+          params.businessId,
+          params.conversationId,
+          params.idempotencyKey,
+          params.userContent,
+        );
+
+        if (existingPair) {
+          return { ...existingPair, created: false };
+        }
+      }
+
+      const maxSeqResult = await client.query<{ next_seq: number }>(
+        `SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_seq
+         FROM conversation_messages
+         WHERE business_id = $1 AND conversation_id = $2`,
+        [params.businessId, params.conversationId],
+      );
+      const nextSequence = maxSeqResult.rows[0]?.next_seq ?? 1;
+      const assistantIdempotencyKey =
+        params.idempotencyKey !== null
+          ? buildAssistantReplyIdempotencyKey(params.idempotencyKey)
+          : null;
+
+      const insertedUser = await client.query<ConversationMessageRow>(
+        `INSERT INTO conversation_messages (
+           business_id, conversation_id, sequence_number, role,
+           author_user_id, content, metadata, idempotency_key
+         )
+         VALUES ($1, $2, $3, 'user', $4, $5, '{}'::jsonb, $6)
+         RETURNING ${MESSAGE_COLUMNS}`,
+        [
+          params.businessId,
+          params.conversationId,
+          nextSequence,
+          params.authorUserId,
+          params.userContent,
+          params.idempotencyKey,
+        ],
+      );
+
+      const insertedAssistant = await client.query<ConversationMessageRow>(
+        `INSERT INTO conversation_messages (
+           business_id, conversation_id, sequence_number, role,
+           author_user_id, content, metadata, idempotency_key
+         )
+         VALUES ($1, $2, $3, 'assistant', NULL, $4, $5::jsonb, $6)
+         RETURNING ${MESSAGE_COLUMNS}`,
+        [
+          params.businessId,
+          params.conversationId,
+          nextSequence + 1,
+          params.assistantContent,
+          JSON.stringify(params.assistantMetadata),
+          assistantIdempotencyKey,
+        ],
+      );
+
+      const userRow = insertedUser.rows[0];
+      const assistantRow = insertedAssistant.rows[0];
+
+      if (!userRow || !assistantRow) {
+        throw new Error('Failed to insert conversation turn messages.');
+      }
+
+      await client.query(
+        `UPDATE conversations
+         SET
+           message_count = message_count + 2,
+           last_message_at = $3
+         WHERE business_id = $1 AND id = $2`,
+        [params.businessId, params.conversationId, assistantRow.created_at],
+      );
+
+      return {
+        userMessage: mapMessageRow(userRow),
+        assistantMessage: mapMessageRow(assistantRow),
+        created: true,
+      };
+    });
+  } catch (error) {
+    if (isPgUniqueViolation(error, 'conversation_messages_idempotency_unique')) {
+      throw new HttpError(
+        409,
+        'IDEMPOTENCY_KEY_CONFLICT',
+        'Concurrent request with the same idempotency key is already in progress or completed.',
+      );
+    }
+
+    throw error;
+  }
 }
 

@@ -1,0 +1,62 @@
+{
+  "request": {
+    "contractVersion": "1.0",
+    "requestId": "req-fixture-0001",
+    "idempotencyKey": "idem-fixture-0001",
+    "deadlineAtMs": 1700000060000,
+    "scope": {
+      "businessId": "11111111-1111-4111-8111-111111111111",
+      "locationId": "22222222-2222-4222-8222-222222222222",
+      "assistantId": "33333333-3333-4333-8333-333333333333",
+      "assistantVersionId": "44444444-4444-4444-8444-444444444444",
+      "conversationId": "55555555-5555-4555-8555-555555555555",
+      "channel": "playground",
+      "actorType": "staff",
+      "actorId": "66666666-6666-4666-8666-666666666666"
+    },
+    "assistant": {
+      "displayName": "Alpha Concierge",
+      "systemInstructions": "Answer using verified business policies only.",
+      "fallbackMessage": "Let me connect you with a staff member.",
+      "language": "en",
+      "tone": "professional",
+      "modelSettings": {
+        "temperature": 0.2,
+        "maxOutputTokens": 512,
+        "maxContextMessages": 10
+      },
+      "allowedTools": ["lookup_availability"],
+      "allowedKnowledgeScopes": ["public", "staff_only"],
+      "knowledgeLocationScope": "assigned_location",
+      "knowledgeLocationIds": []
+    },
+    "conversation": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "What are your Friday hours?",
+          "sequenceNumber": 1
+        }
+      ],
+      "userMessage": "Do you have slots tomorrow morning?"
+    }
+  },
+  "response": {
+    "contractVersion": "1.0",
+    "requestId": "req-fixture-0001",
+    "mode": "mock",
+    "model": "mock",
+    "promptVersion": "respond-v1",
+    "grounded": false,
+    "status": "completed",
+    "answer": "[Mock AI response — Gemini and RAG not enabled] Assistant Alpha Concierge received: Do you have slots tomorrow morning?",
+    "citations": [],
+    "toolProposals": [],
+    "usage": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "totalTokens": 0,
+      "latencyMs": 1
+    }
+  }
+}

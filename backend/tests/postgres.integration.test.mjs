@@ -16,6 +16,7 @@ test('live PostgreSQL: queries, reuse, timeouts, idle eviction, and recovery', {
   Object.assign(process.env, {
     PORT: '3000', NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173',
     AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
+    AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
     DATABASE_URL: databaseUrl, DATABASE_CONNECTION_TIMEOUT_MS: '1000',
     DATABASE_IDLE_TIMEOUT_MS: '1000', DATABASE_QUERY_TIMEOUT_MS: '500',
   });
@@ -65,6 +66,7 @@ async function startServer(t, url) {
     env: {
       ...process.env, PORT: String(port), NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173',
       AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
+      AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
       DATABASE_URL: url, DATABASE_CONNECTION_TIMEOUT_MS: '1000',
       DATABASE_IDLE_TIMEOUT_MS: '30000', DATABASE_QUERY_TIMEOUT_MS: '1000',
     },

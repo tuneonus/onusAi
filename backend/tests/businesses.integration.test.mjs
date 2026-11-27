@@ -68,6 +68,7 @@ test('live business profile and location CRUD, validation, CSRF, RBAC, and tenan
     CORS_ORIGIN: 'http://localhost:5173',
     AI_SERVICE_URL: 'http://127.0.0.1:8001',
     AI_SERVICE_TIMEOUT_MS: '5000',
+    AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
     DATABASE_URL: scopedUrl.href,
     DATABASE_CONNECTION_TIMEOUT_MS: '2000',
     DATABASE_IDLE_TIMEOUT_MS: '1000',

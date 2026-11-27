@@ -7,6 +7,7 @@ Object.assign(process.env, {
   CORS_ORIGIN: 'http://localhost:5173',
   AI_SERVICE_URL: 'http://127.0.0.1:8001',
   AI_SERVICE_TIMEOUT_MS: '5000',
+  AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
   DATABASE_URL: 'postgresql://test:example-password@127.0.0.1:5433/onusai',
   DATABASE_CONNECTION_TIMEOUT_MS: '5000',
   DATABASE_IDLE_TIMEOUT_MS: '30000',
@@ -16,6 +17,7 @@ Object.assign(process.env, {
 const {
   validateCreateConversationInput,
   validateCreateMessageInput,
+  validateCreateTurnInput,
   validateListConversationsQuery,
   validateListMessagesQuery,
   validateUpdateConversationStatusInput,
@@ -102,5 +104,28 @@ test('conversation status and pagination queries validate bounds strictly', () =
     afterSequence: 3,
   });
   assert.throws(() => validateListMessagesQuery({ offset: '-1' }), HttpError);
+});
+
+test('turn validation enforces user content bounds and blocks role spoofing', () => {
+  assert.deepEqual(
+    validateCreateTurnInput({ content: '  What are your Friday hours?  ' }, 'turn-1'),
+    { content: 'What are your Friday hours?', idempotencyKey: 'turn-1' },
+  );
+
+  for (const role of ['assistant', 'system', 'user', 'operator']) {
+    assert.throws(
+      () => validateCreateTurnInput({ role, content: 'Hello' }, undefined),
+      (error) => error instanceof HttpError && error.statusCode === 403 && error.code === 'FORBIDDEN_MESSAGE_ROLE',
+    );
+  }
+
+  for (const invalid of [
+    null,
+    { content: '   ' },
+    { content: 'x'.repeat(4001) },
+    { content: 'Hello', extra: true },
+  ]) {
+    assert.throws(() => validateCreateTurnInput(invalid, undefined), HttpError);
+  }
 });
 

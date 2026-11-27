@@ -64,6 +64,33 @@ export interface CreateMessageInput {
   idempotencyKey: string | null;
 }
 
+export interface CreateTurnInput {
+  content: string;
+  idempotencyKey: string | null;
+}
+
+export interface ConversationTurnResult {
+  conversationId: string;
+  assistantVersionId: string;
+  userMessage: ConversationMessage;
+  assistantMessage: ConversationMessage;
+  ai: {
+    mode: string;
+    model: string;
+    promptVersion: string;
+    grounded: boolean;
+    status: string;
+    requestId: string;
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      latencyMs: number;
+    };
+  };
+  created: boolean;
+}
+
 export interface ListConversationsFilter {
   channel?: ConversationChannel;
   status?: ConversationStatus;

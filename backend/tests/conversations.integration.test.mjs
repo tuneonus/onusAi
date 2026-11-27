@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import { createServer } from 'node:http';
 import { test } from 'node:test';
 import { Pool } from 'pg';
 
@@ -52,12 +53,61 @@ test('live conversation & message persistence, ordering, pagination, idempotency
   const originalOptions = scopedUrl.searchParams.get('options') ?? '';
   scopedUrl.searchParams.set('options', `${originalOptions} -c search_path=${schema},pg_catalog`.trim());
 
+  const aiRequests = [];
+  let aiReplyBehavior = { mode: 'ok' };
+  const aiFixtureServer = createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      const parsed = raw ? JSON.parse(raw) : null;
+      aiRequests.push({ path: req.url, requestId: req.headers['x-request-id'], body: parsed });
+
+      if (aiReplyBehavior.mode === 'fail-503') {
+        res.writeHead(503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'AI unavailable' }));
+        return;
+      }
+      if (aiReplyBehavior.mode === 'rate-limit') {
+        res.writeHead(429, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Rate limited' }));
+        return;
+      }
+
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          contractVersion: '1.0',
+          requestId: parsed.requestId,
+          mode: 'gemini',
+          model: 'gemini-2.5-flash-lite',
+          promptVersion: 'respond-v1',
+          grounded: false,
+          status: 'completed',
+          answer: `Reply from ${parsed.assistant.displayName} (v:${parsed.scope.assistantVersionId}) to: ${parsed.conversation.userMessage}`,
+          citations: [],
+          toolProposals: [],
+          usage: { inputTokens: 21, outputTokens: 9, totalTokens: 30, latencyMs: 12 },
+        }),
+      );
+    });
+  }).listen(0, '127.0.0.1');
+  await once(aiFixtureServer, 'listening');
+  t.after(
+    () =>
+      new Promise((resolve) =>
+        aiFixtureServer.listening ? aiFixtureServer.close(() => resolve()) : resolve(),
+      ),
+  );
+  const aiFixtureUrl = `http://127.0.0.1:${aiFixtureServer.address().port}`;
+
   Object.assign(process.env, {
     PORT: '3000',
     NODE_ENV: 'test',
     CORS_ORIGIN: 'http://localhost:5173',
-    AI_SERVICE_URL: 'http://127.0.0.1:8001',
+    AI_SERVICE_URL: aiFixtureUrl,
     AI_SERVICE_TIMEOUT_MS: '5000',
+    AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
     DATABASE_URL: scopedUrl.href,
     DATABASE_CONNECTION_TIMEOUT_MS: '2000',
     DATABASE_IDLE_TIMEOUT_MS: '1000',
@@ -557,6 +607,244 @@ test('live conversation & message persistence, ordering, pagination, idempotency
       [conv1Id],
     );
     assert.equal(remainingMsgs.rows[0].count, 0);
+  });
+
+  await t.test('AI turn orchestration persists turns, enforces idempotency, version consistency, status gating, and isolation', async () => {
+    // Create a fresh playground conversation bound to the current published assistant version (v1).
+    const convCreate = await fetch(`${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: alphaOwner.cookie,
+        'x-csrf-token': alphaOwner.csrf,
+      },
+      body: JSON.stringify({ assistantId: mainAssistantId }),
+    });
+    assert.equal(convCreate.status, 201);
+    const turnConv = (await convCreate.json()).conversation;
+
+    // Publish a v2 assistant version AFTER creating turnConv; turnConv must remain bound to v1!
+    const v2DraftRes = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/assistants/${mainAssistantId}/versions`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOwner.cookie,
+          'x-csrf-token': alphaOwner.csrf,
+        },
+        body: JSON.stringify({
+          displayName: 'Alpha Concierge V2',
+          systemInstructions: 'V2 instructions that must not retroactively alter v1 conversations.',
+        }),
+      },
+    );
+    assert.equal(v2DraftRes.status, 201);
+    const v2Id = (await v2DraftRes.json()).version.id;
+    const v2PubRes = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/assistants/${mainAssistantId}/versions/${v2Id}/publish`,
+      {
+        method: 'POST',
+        headers: { cookie: alphaOwner.cookie, 'x-csrf-token': alphaOwner.csrf },
+      },
+    );
+    assert.equal(v2PubRes.status, 200);
+
+    // Operator executes Turn 1 with Idempotency-Key.
+    aiRequests.length = 0;
+    const turn1Res = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+          'idempotency-key': 'turn-idem-1',
+          'x-request-id': 'req-pg-turn-0001',
+        },
+        body: JSON.stringify({ content: 'What are your Friday hours?' }),
+      },
+    );
+    assert.equal(turn1Res.status, 201);
+    const turn1Body = await turn1Res.json();
+    assert.equal(turn1Body.idempotentReplay, false);
+    assert.equal(turn1Body.assistantVersionId, turnConv.assistantVersionId);
+    assert.notEqual(turn1Body.assistantVersionId, v2Id);
+    assert.equal(turn1Body.userMessage.role, 'user');
+    assert.equal(turn1Body.userMessage.sequenceNumber, 1);
+    assert.equal(turn1Body.assistantMessage.role, 'assistant');
+    assert.equal(turn1Body.assistantMessage.sequenceNumber, 2);
+    assert.equal(turn1Body.assistantMessage.authorUserId, null);
+    assert.equal(turn1Body.ai.mode, 'gemini');
+    assert.equal(turn1Body.ai.model, 'gemini-2.5-flash-lite');
+    assert.equal(turn1Body.ai.promptVersion, 'respond-v1');
+    assert.equal(turn1Body.ai.grounded, false);
+    assert.deepEqual(turn1Body.ai.usage, {
+      inputTokens: 21,
+      outputTokens: 9,
+      totalTokens: 30,
+      latencyMs: 12,
+    });
+    assert.equal(aiRequests.length, 1);
+    assert.equal(aiRequests[0].requestId, 'req-pg-turn-0001');
+    assert.equal(aiRequests[0].body.scope.assistantVersionId, turnConv.assistantVersionId);
+    assert.notEqual(aiRequests[0].body.assistant.displayName, 'Alpha Concierge V2');
+    assert.deepEqual(aiRequests[0].body.conversation.messages, []);
+
+    // Retrying Turn 1 with the same Idempotency-Key returns 200 replay with zero extra AI calls or DB rows.
+    const replayRes = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+          'idempotency-key': 'turn-idem-1',
+        },
+        body: JSON.stringify({ content: 'What are your Friday hours?' }),
+      },
+    );
+    assert.equal(replayRes.status, 200);
+    const replayBody = await replayRes.json();
+    assert.equal(replayBody.idempotentReplay, true);
+    assert.equal(replayBody.userMessage.id, turn1Body.userMessage.id);
+    assert.equal(replayBody.assistantMessage.id, turn1Body.assistantMessage.id);
+    assert.equal(aiRequests.length, 1);
+
+    // Reusing the same Idempotency-Key with different content fails with 409.
+    const conflictRes = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+          'idempotency-key': 'turn-idem-1',
+        },
+        body: JSON.stringify({ content: 'Different prompt' }),
+      },
+    );
+    assert.equal(conflictRes.status, 409);
+    assert.equal((await conflictRes.json()).error.code, 'IDEMPOTENCY_KEY_CONFLICT');
+
+    // Turn 2 receives Turn 1's user + assistant messages in chronological context.
+    const turn2Res = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+        },
+        body: JSON.stringify({ content: 'Do you have weekend slots?' }),
+      },
+    );
+    assert.equal(turn2Res.status, 201);
+    const turn2Body = await turn2Res.json();
+    assert.equal(turn2Body.userMessage.sequenceNumber, 3);
+    assert.equal(turn2Body.assistantMessage.sequenceNumber, 4);
+    assert.equal(aiRequests.length, 2);
+    assert.deepEqual(
+      aiRequests[1].body.conversation.messages.map((m) => ({
+        role: m.role,
+        sequenceNumber: m.sequenceNumber,
+      })),
+      [
+        { role: 'user', sequenceNumber: 1 },
+        { role: 'assistant', sequenceNumber: 2 },
+      ],
+    );
+
+    // AI rate limit / failure leaves no orphan user message in PostgreSQL.
+    aiReplyBehavior = { mode: 'rate-limit' };
+    const failedTurnRes = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+        },
+        body: JSON.stringify({ content: 'Should not persist on 429' }),
+      },
+    );
+    assert.equal(failedTurnRes.status, 429);
+    assert.equal((await failedTurnRes.json()).error.code, 'AI_RATE_LIMITED');
+    aiReplyBehavior = { mode: 'ok' };
+
+    const afterFailMsgs = await (
+      await fetch(`${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/messages`, {
+        headers: { cookie: alphaOwner.cookie },
+      })
+    ).json();
+    assert.equal(afterFailMsgs.messages.length, 4);
+
+    // Role spoofing on /turns and cross-tenant access are rejected.
+    const spoofTurn = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+        },
+        body: JSON.stringify({ role: 'assistant', content: 'Spoofed' }),
+      },
+    );
+    assert.equal(spoofTurn.status, 403);
+    assert.equal((await spoofTurn.json()).error.code, 'FORBIDDEN_MESSAGE_ROLE');
+
+    const crossTenantTurn = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: betaOwner.cookie,
+          'x-csrf-token': betaOwner.csrf,
+        },
+        body: JSON.stringify({ content: 'Cross-tenant attempt' }),
+      },
+    );
+    assert.equal(crossTenantTurn.status, 403);
+    assert.equal((await crossTenantTurn.json()).error.code, 'TENANT_ACCESS_DENIED');
+
+    // Moving conversation to pending_human pauses AI replies (409 CONVERSATION_NOT_ACTIVE).
+    const handoffPatch = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+        },
+        body: JSON.stringify({ status: 'pending_human' }),
+      },
+    );
+    assert.equal(handoffPatch.status, 200);
+
+    const pausedTurn = await fetch(
+      `${baseUrl}/api/v1/businesses/${alphaBusinessId}/conversations/${turnConv.id}/turns`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: alphaOperator.cookie,
+          'x-csrf-token': alphaOperator.csrf,
+        },
+        body: JSON.stringify({ content: 'Should not trigger AI while pending_human' }),
+      },
+    );
+    assert.equal(pausedTurn.status, 409);
+    assert.equal((await pausedTurn.json()).error.code, 'CONVERSATION_NOT_ACTIVE');
+    assert.equal(aiRequests.length, 3);
   });
 });
 

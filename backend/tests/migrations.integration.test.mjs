@@ -27,6 +27,7 @@ function startCli(t, connectionUrl) {
     env: {
       ...process.env, PORT: '3000', NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173',
       AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
+      AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
       DATABASE_URL: connectionUrl, DATABASE_CONNECTION_TIMEOUT_MS: '2000',
       DATABASE_IDLE_TIMEOUT_MS: '1000', DATABASE_QUERY_TIMEOUT_MS: '5000',
     },
@@ -104,6 +105,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
   Object.assign(process.env, {
     PORT: '3000', NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173',
     AI_SERVICE_URL: 'http://127.0.0.1:8001', AI_SERVICE_TIMEOUT_MS: '5000',
+    AI_INTERNAL_AUTH_SECRET: 'test-internal-auth-secret-at-least-32-characters',
     DATABASE_URL: scopedUrl.href, DATABASE_CONNECTION_TIMEOUT_MS: '2000',
     DATABASE_IDLE_TIMEOUT_MS: '1000', DATABASE_QUERY_TIMEOUT_MS: '5000',
   });

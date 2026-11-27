@@ -3,12 +3,14 @@ import express from 'express';
 import { env } from './config/env.js';
 import { errorHandler } from './middlewares/error-handler.js';
 import { notFound } from './middlewares/not-found.js';
+import { requestIdMiddleware } from './middlewares/request-id.js';
 import { apiRouter } from './routes/index.js';
 import { HttpError } from './utils/http-error.js';
 
 export const app = express();
 
 app.disable('x-powered-by');
+app.use(requestIdMiddleware);
 
 app.use(cors({
   credentials: true,

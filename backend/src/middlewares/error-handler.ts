@@ -4,7 +4,7 @@ import { HttpError } from '../utils/http-error.js';
 
 export function errorHandler(
   error: unknown,
-  _req: Request,
+  req: Request,
   res: Response<ApiErrorResponse>,
   next: NextFunction,
 ): void {
@@ -57,6 +57,7 @@ export function errorHandler(
     // Do not log arbitrary error messages, request bodies, or credentials.
     console.error('Unhandled request error.', {
       name: error instanceof Error ? error.name : 'UnknownError',
+      requestId: req.requestId,
     });
   }
 
