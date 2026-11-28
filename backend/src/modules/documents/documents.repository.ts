@@ -6,6 +6,10 @@ import {
   cancelActiveIngestionJobsForUnindexedVersions,
   enqueueIngestionJob,
 } from '../ingestion-jobs/ingestion-jobs.repository.js';
+import {
+  bumpKnowledgeEpoch,
+  enqueueVectorCleanupJob,
+} from '../vector-cleanup/vector-cleanup.repository.js';
 import type {
   CreateDocumentInput,
   DocumentChunkRecord,
@@ -57,6 +61,10 @@ interface DocumentVersionSummaryRow {
   chunk_count: number;
   normalized_char_count: number | null;
   normalized_sha256: string | null;
+  embedding_model: string | null;
+  embedding_model_version: string | null;
+  embedding_dimensions: number | null;
+  qdrant_collection: string | null;
   failure_reason: string | null;
   indexed_at: Date | null;
   created_by_user_id: string | null;
@@ -79,6 +87,7 @@ const VERSION_SUMMARY_COLUMNS = `
   source_filename, mime_type, source_type, encoding,
   byte_size, char_count, content_sha256, chunk_version,
   chunk_count, normalized_char_count, normalized_sha256,
+  embedding_model, embedding_model_version, embedding_dimensions, qdrant_collection,
   failure_reason, indexed_at, created_by_user_id, created_at, updated_at
 `;
 
@@ -120,6 +129,10 @@ function mapVersionSummaryRow(row: DocumentVersionSummaryRow): DocumentVersionSu
     chunkCount: row.chunk_count,
     normalizedCharCount: row.normalized_char_count,
     normalizedSha256: row.normalized_sha256,
+    embeddingModel: row.embedding_model,
+    embeddingModelVersion: row.embedding_model_version,
+    embeddingDimensions: row.embedding_dimensions,
+    qdrantCollection: row.qdrant_collection,
     failureReason: row.failure_reason,
     indexedAt: row.indexed_at,
     createdByUserId: row.created_by_user_id,
@@ -516,6 +529,28 @@ export async function updateDocumentMetadata(
          WHERE business_id = $1 AND document_id = $2`,
         [businessId, documentId, updatedDoc.visibility, updatedDoc.locationId],
       );
+
+      const activeCollectionRes = await client.query<{ qdrant_collection: string | null }>(
+        `SELECT qdrant_collection
+         FROM document_versions
+         WHERE business_id = $1 AND document_id = $2 AND status = 'ready'
+         LIMIT 1`,
+        [businessId, documentId],
+      );
+      const qdrantCollection = activeCollectionRes.rows[0]?.qdrant_collection ?? null;
+      if (qdrantCollection !== null) {
+        await enqueueVectorCleanupJob(client, {
+          businessId,
+          documentId,
+          qdrantCollection,
+          jobType: 'sync_metadata',
+          payload: {
+            visibility: updatedDoc.visibility,
+            locationId: updatedDoc.locationId,
+          },
+        });
+      }
+      await bumpKnowledgeEpoch(client, businessId, 'metadata_updated');
     }
 
     return updatedDoc;
@@ -642,6 +677,15 @@ export async function softDeleteDocument(
       [businessId, documentId, deletedByUserId],
     );
 
+    const indexedCollectionsRes = await client.query<{ qdrant_collection: string }>(
+      `SELECT DISTINCT qdrant_collection
+       FROM document_versions
+       WHERE business_id = $1
+         AND document_id = $2
+         AND qdrant_collection IS NOT NULL`,
+      [businessId, documentId],
+    );
+
     await client.query(
       `UPDATE document_versions
        SET status = 'deleted'
@@ -650,6 +694,23 @@ export async function softDeleteDocument(
     );
 
     await cancelActiveIngestionJobsForDocument(client, businessId, documentId);
+
+    for (const row of indexedCollectionsRes.rows) {
+      await enqueueVectorCleanupJob(client, {
+        businessId,
+        documentId,
+        qdrantCollection: row.qdrant_collection,
+        jobType: 'delete_document',
+      });
+    }
+    if (indexedCollectionsRes.rows.length === 0) {
+      await enqueueVectorCleanupJob(client, {
+        businessId,
+        documentId,
+        jobType: 'delete_document',
+      });
+    }
+    await bumpKnowledgeEpoch(client, businessId, 'document_deleted');
 
     return mapDocumentRow(updatedDoc.rows[0]!);
   });

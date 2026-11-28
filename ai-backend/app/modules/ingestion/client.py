@@ -7,7 +7,13 @@ import httpx2
 from app.core.config import Settings
 from app.core.internal_auth import sign_worker_service_token
 from app.modules.ingestion.chunker import ChunkedDocumentResult
-from app.modules.ingestion.schemas import JobMutationResponse, LeaseJobResponse
+from app.modules.ingestion.indexer import VectorIndexResult
+from app.modules.ingestion.schemas import (
+    CleanupJobMutationResponse,
+    JobMutationResponse,
+    LeaseCleanupJobResponse,
+    LeaseJobResponse,
+)
 
 
 class IngestionClientError(RuntimeError):
@@ -105,35 +111,46 @@ class BackendIngestionClient:
         business_id: str,
         document_version_id: str,
         chunking: ChunkedDocumentResult,
+        indexing: VectorIndexResult | None = None,
         request_id: str | None = None,
     ) -> JobMutationResponse:
+        payload: dict[str, object] = {
+            "leaseToken": lease_token,
+            "businessId": business_id,
+            "documentVersionId": document_version_id,
+            "chunking": {
+                "chunkVersion": chunking.chunk_version,
+                "chunkMaxChars": chunking.chunk_max_chars,
+                "chunkOverlapChars": chunking.chunk_overlap_chars,
+                "normalizedCharCount": chunking.normalized_char_count,
+                "normalizedSha256": chunking.normalized_sha256,
+                "chunks": [
+                    {
+                        "chunkId": chunk.chunk_id,
+                        "chunkIndex": chunk.chunk_index,
+                        "headingPath": chunk.heading_path,
+                        "charStart": chunk.char_start,
+                        "charEnd": chunk.char_end,
+                        "charCount": chunk.char_count,
+                        "contentSha256": chunk.content_sha256,
+                        "chunkText": chunk.chunk_text,
+                    }
+                    for chunk in chunking.chunks
+                ],
+            },
+        }
+        if indexing is not None:
+            payload["indexing"] = {
+                "embeddingModel": indexing.embedding_model,
+                "embeddingModelVersion": indexing.embedding_model_version,
+                "embeddingDimensions": indexing.embedding_dimensions,
+                "qdrantCollection": indexing.qdrant_collection,
+                "indexedChunkCount": indexing.indexed_chunk_count,
+            }
+
         data = await self._post_json(
             f"/api/v1/internal/ingestion-jobs/{job_id}/complete",
-            {
-                "leaseToken": lease_token,
-                "businessId": business_id,
-                "documentVersionId": document_version_id,
-                "chunking": {
-                    "chunkVersion": chunking.chunk_version,
-                    "chunkMaxChars": chunking.chunk_max_chars,
-                    "chunkOverlapChars": chunking.chunk_overlap_chars,
-                    "normalizedCharCount": chunking.normalized_char_count,
-                    "normalizedSha256": chunking.normalized_sha256,
-                    "chunks": [
-                        {
-                            "chunkId": chunk.chunk_id,
-                            "chunkIndex": chunk.chunk_index,
-                            "headingPath": chunk.heading_path,
-                            "charStart": chunk.char_start,
-                            "charEnd": chunk.char_end,
-                            "charCount": chunk.char_count,
-                            "contentSha256": chunk.content_sha256,
-                            "chunkText": chunk.chunk_text,
-                        }
-                        for chunk in chunking.chunks
-                    ],
-                },
-            },
+            payload,
             request_id=request_id,
         )
         return JobMutationResponse.model_validate(data)
@@ -163,4 +180,67 @@ class BackendIngestionClient:
             request_id=request_id,
         )
         return JobMutationResponse.model_validate(data)
+
+    async def lease_next_cleanup_job(
+        self,
+        *,
+        worker_id: str,
+        lease_duration_seconds: int = 60,
+        request_id: str | None = None,
+    ) -> LeaseCleanupJobResponse:
+        data = await self._post_json(
+            "/api/v1/internal/vector-cleanup-jobs/lease",
+            {
+                "workerId": worker_id,
+                "leaseDurationSeconds": lease_duration_seconds,
+            },
+            request_id=request_id,
+        )
+        return LeaseCleanupJobResponse.model_validate(data)
+
+    async def complete_cleanup_job(
+        self,
+        *,
+        job_id: str,
+        lease_token: str,
+        business_id: str,
+        document_id: str,
+        request_id: str | None = None,
+    ) -> CleanupJobMutationResponse:
+        data = await self._post_json(
+            f"/api/v1/internal/vector-cleanup-jobs/{job_id}/complete",
+            {
+                "leaseToken": lease_token,
+                "businessId": business_id,
+                "documentId": document_id,
+            },
+            request_id=request_id,
+        )
+        return CleanupJobMutationResponse.model_validate(data)
+
+    async def fail_cleanup_job(
+        self,
+        *,
+        job_id: str,
+        lease_token: str,
+        business_id: str,
+        document_id: str,
+        error_message: str,
+        retryable: bool = True,
+        retry_delay_seconds: int = 0,
+        request_id: str | None = None,
+    ) -> CleanupJobMutationResponse:
+        data = await self._post_json(
+            f"/api/v1/internal/vector-cleanup-jobs/{job_id}/fail",
+            {
+                "leaseToken": lease_token,
+                "businessId": business_id,
+                "documentId": document_id,
+                "errorMessage": error_message.strip()[:500] or "Vector cleanup job failed.",
+                "retryable": retryable,
+                "retryDelaySeconds": retry_delay_seconds,
+            },
+            request_id=request_id,
+        )
+        return CleanupJobMutationResponse.model_validate(data)
 

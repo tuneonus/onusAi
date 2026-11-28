@@ -42,6 +42,10 @@ export interface DocumentVersionSummary {
   chunkCount: number;
   normalizedCharCount: number | null;
   normalizedSha256: string | null;
+  embeddingModel?: string | null;
+  embeddingModelVersion?: string | null;
+  embeddingDimensions?: number | null;
+  qdrantCollection?: string | null;
   failureReason: string | null;
   indexedAt: string | null;
   createdByUserId: string | null;
@@ -119,5 +123,46 @@ export interface KnowledgeOverviewMetrics {
   failedCount: number;
   deletedCount: number;
   totalChunks: number;
+}
+
+export interface KnowledgeSearchCitation {
+  documentId: string;
+  documentVersionId: string;
+  chunkId: string;
+  title: string;
+  sourceFilename: string;
+  versionNumber: number;
+  headingPath: string[];
+}
+
+export interface KnowledgeSearchResult {
+  chunkId: string;
+  documentId: string;
+  documentVersionId: string;
+  chunkIndex: number;
+  score: number;
+  chunkText: string;
+  title: string;
+  sourceFilename: string;
+  sourceType: 'txt' | 'markdown';
+  mimeType: 'text/plain' | 'text/markdown';
+  versionNumber: number;
+  visibility: DocumentVisibility;
+  locationId: string | null;
+  chunkVersion: string;
+  headingPath: string[];
+  charStart: number;
+  charEnd: number;
+  citation: KnowledgeSearchCitation;
+}
+
+export interface KnowledgeSearchResponse {
+  requestId: string;
+  embeddingModel: string;
+  embeddingModelVersion: string;
+  embeddingDimensions: number;
+  qdrantCollection: string;
+  candidateCount: number;
+  results: KnowledgeSearchResult[];
 }
 

@@ -239,6 +239,7 @@ export async function executeStaffConversationTurn(
     outputTokens: aiResponse.usage.outputTokens,
     totalTokens: aiResponse.usage.totalTokens,
     latencyMs: aiResponse.usage.latencyMs,
+    citationsJson: aiResponse.citations.length > 0 ? JSON.stringify(aiResponse.citations) : null,
   };
 
   const persisted = await persistConversationTurn({

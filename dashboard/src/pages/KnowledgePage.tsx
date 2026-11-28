@@ -12,6 +12,7 @@ import type { UserMembershipSummary } from '../features/auth/types';
 import { useTenant } from '../features/businesses/useTenant';
 import { DocumentDetailPanel } from '../features/knowledge/components/DocumentDetailPanel';
 import { DocumentUploadCard } from '../features/knowledge/components/DocumentUploadCard';
+import { KnowledgeSearchPanel } from '../features/knowledge/components/KnowledgeSearchPanel';
 import {
   DocumentStatusBadge,
   VisibilityBadge,
@@ -131,10 +132,11 @@ function KnowledgeWorkspace({ membership }: { membership: UserMembershipSummary 
         </Button>
       </header>
 
-      <Alert tone="info" title="Ingestion pipeline status (Phase 05)">
-        Uploaded and chunked documents remain in <strong>uploaded</strong> or{' '}
-        <strong>processing</strong> state until Phase 06 vector indexing is enabled. They are not
-        marked indexed or ready prematurely.
+      <Alert tone="info" title="Ingestion & vector indexing pipeline (Phase 06)">
+        Documents move from <strong>uploaded</strong> → <strong>processing</strong> →{' '}
+        <strong>ready</strong> after the Python ingestion worker chunks text, generates Gemini
+        embeddings, and indexes vectors in Qdrant. Replacements keep the previous{' '}
+        <strong>ready</strong> version active until the new version finishes indexing.
       </Alert>
 
       {bannerMessage && (
@@ -195,6 +197,8 @@ function KnowledgeWorkspace({ membership }: { membership: UserMembershipSummary 
           business owners can upload, edit, retry, or delete documents.
         </Alert>
       )}
+
+      <KnowledgeSearchPanel membership={membership} locations={locations} />
 
       {!documents && !loadingError ? (
         <Spinner label="Loading knowledge documents" />

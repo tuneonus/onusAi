@@ -39,6 +39,10 @@ export interface LeasedDocumentPayload {
   charCount: number;
   contentSha256: string;
   contentText: string;
+  existingChunkVersion?: string | null;
+  existingNormalizedCharCount?: number | null;
+  existingNormalizedSha256?: string | null;
+  existingChunks?: DocumentChunkInput[] | null;
 }
 
 export interface LeasedIngestionJob {
@@ -71,11 +75,20 @@ export interface ChunkingPayloadInput {
   chunks: DocumentChunkInput[];
 }
 
+export interface IndexingPayloadInput {
+  embeddingModel: string;
+  embeddingModelVersion: string;
+  embeddingDimensions: number;
+  qdrantCollection: string;
+  indexedChunkCount: number;
+}
+
 export interface CompleteJobInput {
   leaseToken: string;
   businessId: string;
   documentVersionId: string;
   chunking: ChunkingPayloadInput;
+  indexing?: IndexingPayloadInput;
 }
 
 export interface FailJobInput {

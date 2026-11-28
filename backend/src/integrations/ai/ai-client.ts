@@ -207,3 +207,63 @@ export async function requestAiResponse(
     throw new HttpError(502, 'AI_SERVICE_INVALID_RESPONSE', 'AI service returned an invalid response.');
   }
 }
+
+export interface AiRetrieveCallInput {
+  businessId: string;
+  allowedKnowledgeScopes: Array<'public' | 'staff_only'>;
+  locationIds: string[] | null;
+  includeBusinessWide: boolean;
+  query: string;
+  topK?: number | undefined;
+  scoreThreshold?: number | undefined;
+  requestId?: string | undefined;
+  timeoutMs?: number | undefined;
+}
+
+export async function requestAiRetrieve(input: AiRetrieveCallInput): Promise<Record<string, unknown>> {
+  const timeoutMs = resolveBoundedTimeoutMs(input.timeoutMs);
+  const requestId = normalizeRequestId(input.requestId);
+  const deadlineAtMs = Date.now() + timeoutMs;
+
+  const token = createInternalServiceToken('ai:retrieve', {
+    maxTtlSeconds: Math.max(1, Math.ceil(timeoutMs / 1000)),
+  });
+
+  const payload: Record<string, unknown> = {
+    requestId,
+    businessId: input.businessId,
+    allowedKnowledgeScopes: input.allowedKnowledgeScopes,
+    locationIds: input.locationIds,
+    includeBusinessWide: input.includeBusinessWide,
+    query: input.query,
+    deadlineAtMs,
+  };
+  if (input.topK !== undefined) {
+    payload.topK = input.topK;
+  }
+  if (input.scoreThreshold !== undefined) {
+    payload.scoreThreshold = input.scoreThreshold;
+  }
+
+  const rawBody = await fetchAiJson('/api/v1/internal/retrieve', {
+    method: 'POST',
+    token,
+    requestId,
+    timeoutMs,
+    body: JSON.stringify(payload),
+    extraHeaders: {
+      'x-request-deadline-ms': String(deadlineAtMs),
+    },
+  });
+
+  if (
+    typeof rawBody !== 'object' ||
+    rawBody === null ||
+    Array.isArray(rawBody) ||
+    !Array.isArray((rawBody as Record<string, unknown>).results)
+  ) {
+    throw new HttpError(502, 'AI_SERVICE_INVALID_RESPONSE', 'AI service returned an invalid response.');
+  }
+
+  return rawBody as Record<string, unknown>;
+}

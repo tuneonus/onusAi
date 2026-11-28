@@ -15,8 +15,10 @@ from app.core.exceptions import (
 )
 from app.core.logging import configure_logging
 from app.integrations.gemini_client import GeminiAdapter
+from app.integrations.gemini_embeddings import EmbeddingAdapter
 from app.middleware.body_limit import MaxBodySizeMiddleware
 from app.middleware.request_id import RequestIdMiddleware
+from app.modules.ingestion.indexer import build_embedding_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,16 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 await adapter.aclose()
             except Exception as exc:
                 logger.warning("Failed to close Gemini client: %s", type(exc).__name__)
+        embedding_adapter: EmbeddingAdapter | None = getattr(
+            application.state, "embedding_adapter", None
+        )
+        if embedding_adapter is not None:
+            try:
+                await embedding_adapter.aclose()
+            except Exception as exc:
+                logger.warning(
+                    "Failed to close Gemini embedding client: %s", type(exc).__name__
+                )
         logger.info("Stopped %s", application.title)
 
 
@@ -54,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         and application_settings.gemini_api_key is not None
         else None
     )
+    application.state.embedding_adapter = build_embedding_adapter(application_settings)
     application.add_exception_handler(
         RequestValidationError, validation_exception_handler
     )

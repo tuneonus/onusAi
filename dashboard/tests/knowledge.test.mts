@@ -180,3 +180,74 @@ test('KnowledgeApi blocks operator writes without network requests and sends For
   }
 });
 
+test('KnowledgeApi.search sends scoped semantic search request and validates response', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+  let capturedBody = '';
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = String(input);
+    capturedBody = String(init?.body ?? '');
+    return new Response(
+      JSON.stringify({
+        requestId: 'req-12345678',
+        embeddingModel: 'gemini-embedding-001',
+        embeddingModelVersion: 'embed-v1',
+        embeddingDimensions: 768,
+        qdrantCollection: 'onussync_chunks__embed-v1__d768',
+        candidateCount: 1,
+        results: [
+          {
+            chunkId: 'c1',
+            documentId: 'd1',
+            documentVersionId: 'v1',
+            chunkIndex: 0,
+            score: 0.72,
+            chunkText: 'Check-in is 14:00.',
+            title: 'hotel',
+            sourceFilename: 'hotel.txt',
+            sourceType: 'txt',
+            mimeType: 'text/plain',
+            versionNumber: 1,
+            visibility: 'public',
+            locationId: null,
+            chunkVersion: 'chunk-v1',
+            headingPath: [],
+            charStart: 0,
+            charEnd: 18,
+            citation: {
+              documentId: 'd1',
+              documentVersionId: 'v1',
+              chunkId: 'c1',
+              title: 'hotel',
+              sourceFilename: 'hotel.txt',
+              versionNumber: 1,
+              headingPath: [],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const searchMembership = {
+      businessId: 'biz-1',
+      businessName: 'Test Co',
+      role: 'owner' as const,
+    };
+    const api = new KnowledgeApi(searchMembership, new AbortController().signal);
+    const res = await api.search({ query: 'check-in time', topK: 5, scoreThreshold: 0.35 });
+    assert.equal(capturedUrl, '/api/v1/businesses/biz-1/knowledge/search');
+    assert.deepEqual(JSON.parse(capturedBody), {
+      query: 'check-in time',
+      topK: 5,
+      scoreThreshold: 0.35,
+    });
+    assert.equal(res.results.length, 1);
+    assert.equal(res.results[0]!.citation.sourceFilename, 'hotel.txt');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+

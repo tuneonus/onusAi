@@ -108,14 +108,18 @@ class GeminiAdapter:
         max_output_tokens: int,
         fallback_message: str,
         model: str | None = None,
+        response_mime_type: str | None = None,
     ) -> GeminiGenerationResult:
         """Generate a single response asynchronously and map provider failures safely."""
         target_model = model or self._default_model
-        config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-        )
+        config_kwargs: dict[str, Any] = {
+            "system_instruction": system_instruction,
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+        }
+        if response_mime_type is not None:
+            config_kwargs["response_mime_type"] = response_mime_type
+        config = types.GenerateContentConfig(**config_kwargs)
 
         try:
             response = await self._client.aio.models.generate_content(

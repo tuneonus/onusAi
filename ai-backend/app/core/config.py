@@ -12,7 +12,29 @@ SERVICE_DIRECTORY = Path(__file__).resolve().parents[2]
 MIN_INTERNAL_AUTH_SECRET_LENGTH = 32
 MIN_GEMINI_API_KEY_LENGTH = 10
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001"
+DEFAULT_EMBEDDING_DIMENSIONS = 768
+DEFAULT_EMBEDDING_MODEL_VERSION = "embed-v1"
 MODEL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+COLLECTION_PREFIX_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _validate_http_origin(value: str, env_name: str) -> str:
+    """Accept only HTTP(S) origins without credentials, paths, queries, or fragments."""
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            f"{env_name} must be an HTTP(S) origin without credentials, paths, queries, or fragments."
+        )
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 class Settings(BaseSettings):
@@ -57,6 +79,38 @@ class Settings(BaseSettings):
         default=DEFAULT_GEMINI_MODEL, min_length=1, max_length=100
     )
 
+    embedding_model: str = Field(
+        default=DEFAULT_EMBEDDING_MODEL, min_length=1, max_length=100
+    )
+    embedding_dimensions: int = Field(
+        default=DEFAULT_EMBEDDING_DIMENSIONS, ge=128, le=3072
+    )
+    embedding_model_version: str = Field(
+        default=DEFAULT_EMBEDDING_MODEL_VERSION, min_length=1, max_length=64
+    )
+    embedding_batch_size: int = Field(default=32, ge=1, le=100)
+    embedding_max_retries: int = Field(default=3, ge=0, le=5)
+    embedding_retry_base_delay_ms: int = Field(default=250, ge=10, le=10_000)
+
+    qdrant_url: str = Field(
+        default="http://127.0.0.1:6333", min_length=1, max_length=300
+    )
+    qdrant_api_key: SecretStr | None = None
+    qdrant_collection_prefix: str = Field(
+        default="onussync_chunks", min_length=1, max_length=64
+    )
+    qdrant_request_timeout_ms: int = Field(default=5000, ge=100, le=60_000)
+
+    retrieval_default_top_k: int = Field(default=5, ge=1, le=20)
+    retrieval_max_top_k: int = Field(default=20, ge=1, le=50)
+    retrieval_default_score_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+
+    rag_enabled: bool = True
+    rag_max_context_chunks: int = Field(default=5, ge=1, le=20)
+    rag_max_context_chars: int = Field(default=6000, ge=500, le=32_000)
+    rag_max_history_messages: int = Field(default=10, ge=0, le=20)
+    rag_max_output_tokens: int = Field(default=1024, ge=64, le=2048)
+
     @field_validator("internal_auth_secret", mode="before")
     @classmethod
     def validate_internal_auth_secret(cls, value: object) -> object:
@@ -93,20 +147,13 @@ class Settings(BaseSettings):
     @classmethod
     def validate_backend_service_url(cls, value: str) -> str:
         """Accept only HTTP(S) origins without credentials, paths, queries, or fragments."""
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.netloc
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path not in {"", "/"}
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError(
-                "AI_BACKEND_SERVICE_URL must be an HTTP(S) origin without credentials, paths, queries, or fragments."
-            )
-        return f"{parsed.scheme}://{parsed.netloc}"
+        return _validate_http_origin(value, "AI_BACKEND_SERVICE_URL")
+
+    @field_validator("qdrant_url")
+    @classmethod
+    def validate_qdrant_url(cls, value: str) -> str:
+        """Accept only HTTP(S) origins without credentials, paths, queries, or fragments."""
+        return _validate_http_origin(value, "AI_QDRANT_URL")
 
     @field_validator("gemini_model")
     @classmethod
@@ -115,6 +162,49 @@ class Settings(BaseSettings):
         if not MODEL_NAME_PATTERN.match(value):
             raise ValueError(
                 "AI_GEMINI_MODEL must contain only letters, digits, dots, underscores, or hyphens."
+            )
+        return value
+
+    @field_validator("embedding_model")
+    @classmethod
+    def validate_embedding_model(cls, value: str) -> str:
+        """Accept only safe embedding model identifiers."""
+        if not MODEL_NAME_PATTERN.match(value):
+            raise ValueError(
+                "AI_EMBEDDING_MODEL must contain only letters, digits, dots, underscores, or hyphens."
+            )
+        return value
+
+    @field_validator("embedding_model_version")
+    @classmethod
+    def validate_embedding_model_version(cls, value: str) -> str:
+        """Accept only safe embedding version identifiers."""
+        if not MODEL_NAME_PATTERN.match(value):
+            raise ValueError(
+                "AI_EMBEDDING_MODEL_VERSION must contain only letters, digits, dots, underscores, or hyphens."
+            )
+        return value
+
+    @field_validator("qdrant_collection_prefix")
+    @classmethod
+    def validate_qdrant_collection_prefix(cls, value: str) -> str:
+        """Accept only safe Qdrant collection name prefixes."""
+        if not COLLECTION_PREFIX_PATTERN.match(value):
+            raise ValueError(
+                "AI_QDRANT_COLLECTION_PREFIX must contain only letters, digits, underscores, or hyphens."
+            )
+        return value
+
+    @field_validator("qdrant_api_key", mode="before")
+    @classmethod
+    def validate_qdrant_api_key(cls, value: object) -> object:
+        """Reject empty or whitespace-padded Qdrant API keys when supplied."""
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if not isinstance(raw, str) or len(raw) < 1 or raw != raw.strip():
+            raise ValueError(
+                "AI_QDRANT_API_KEY must be a non-empty string without surrounding whitespace."
             )
         return value
 
@@ -134,6 +224,10 @@ class Settings(BaseSettings):
         if self.chunk_overlap_chars >= self.chunk_max_chars:
             raise ValueError(
                 "AI_CHUNK_OVERLAP_CHARS must be smaller than AI_CHUNK_MAX_CHARS."
+            )
+        if self.retrieval_default_top_k > self.retrieval_max_top_k:
+            raise ValueError(
+                "AI_RETRIEVAL_DEFAULT_TOP_K must be <= AI_RETRIEVAL_MAX_TOP_K."
             )
         return self
 

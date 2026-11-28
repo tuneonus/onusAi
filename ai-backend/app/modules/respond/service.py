@@ -5,11 +5,13 @@ import time
 from app.core.async_boundary import run_cpu_bound
 from app.core.config import Settings
 from app.integrations.gemini_client import GeminiAdapter
+from app.integrations.gemini_embeddings import EmbeddingAdapter
 from app.modules.respond.prompts import (
     PROMPT_VERSION,
     build_gemini_contents,
     build_system_instruction,
 )
+from app.modules.respond.rag import generate_rag_response
 from app.modules.respond.schemas import (
     AiRespondRequest,
     AiRespondResponse,
@@ -30,8 +32,9 @@ async def generate_ai_response(
     request_data: AiRespondRequest,
     settings: Settings,
     gemini_adapter: GeminiAdapter | None = None,
+    embedding_adapter: EmbeddingAdapter | None = None,
 ) -> AiRespondResponse:
-    """Route generation to explicit mock mode or the async Google Gemini adapter."""
+    """Route generation to explicit mock mode, scoped RAG, or direct Gemini generation."""
     started_ns = time.monotonic_ns()
 
     if settings.generation_mode == "mock":
@@ -67,6 +70,14 @@ async def generate_ai_response(
         gemini_adapter = GeminiAdapter(
             api_key=settings.gemini_api_key.get_secret_value(),
             default_model=settings.gemini_model,
+        )
+
+    if settings.rag_enabled and embedding_adapter is not None:
+        return await generate_rag_response(
+            request_data,
+            settings,
+            gemini_adapter,
+            embedding_adapter,
         )
 
     system_instruction = build_system_instruction(

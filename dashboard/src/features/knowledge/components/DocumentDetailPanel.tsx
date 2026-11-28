@@ -423,6 +423,13 @@ export function DocumentDetailPanel({
                     {ver.chunkVersion ? ` (${ver.chunkVersion})` : ''} · Indexed:{' '}
                     {ver.indexedAt ? new Date(ver.indexedAt).toLocaleString() : 'Not indexed'}
                   </p>
+                  {ver.embeddingModel && (
+                    <p className="knowledge-meta-text">
+                      Vectors: {ver.embeddingModel} ({ver.embeddingModelVersion ?? 'v1'},{' '}
+                      {ver.embeddingDimensions ?? 768}d) · Collection:{' '}
+                      <code>{ver.qdrantCollection ?? '—'}</code>
+                    </p>
+                  )}
                   {ver.failureReason && (
                     <p className="knowledge-error-text">Failure: {ver.failureReason}</p>
                   )}

@@ -12,6 +12,31 @@ import { TextareaField } from '../../../components/ui/TextareaField';
 import type { UserMembershipSummary } from '../../auth/types';
 import { STATUSES, type ConversationStatus } from '../types';
 import { useConversation } from '../useConversation';
+
+interface StoredCitation {
+  sourceId: string;
+  chunkId: string;
+  title: string;
+}
+
+function parseCitations(raw: unknown): StoredCitation[] {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is StoredCitation =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof item.sourceId === 'string' &&
+        typeof item.chunkId === 'string' &&
+        typeof item.title === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function ConversationThread({ membership, id, onRemoved }: { membership: UserMembershipSummary; id: string; onRemoved: (id: string, purged: boolean) => void }) {
   const thread = useConversation(membership, id);
   const [destructive, setDestructive] = useState<'delete' | 'purge' | null>(null);
@@ -28,7 +53,12 @@ export function ConversationThread({ membership, id, onRemoved }: { membership: 
       </CardBody>
       <div className="conversation-messages" role="log" aria-label="Conversation messages" aria-live="polite">
         {!thread.messages.length && <div className="conversation-empty">No messages yet. Send a question to test this assistant.</div>}
-        {thread.messages.map(m => <article key={m.id} className={`conversation-bubble conversation-bubble--${m.role}`}><header><strong>{m.role === 'user' ? 'You' : m.role === 'assistant' ? 'Assistant' : m.role}</strong><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header><p>{m.content}</p>{m.role === 'assistant' && <details className="conversation-metadata"><summary>Response details</summary><small>{['mode', 'model', 'grounded', 'inputTokens', 'outputTokens', 'totalTokens', 'latencyMs'].filter(k => m.metadata[k] !== undefined).map(k => `${k}: ${String(m.metadata[k])}`).join(' · ')}</small></details>}</article>)}
+        {thread.messages.map(m => {
+          const citations = m.role === 'assistant' ? parseCitations(m.metadata.citationsJson) : [];
+          const isAbstained = m.role === 'assistant' && m.metadata.aiStatus === 'abstained';
+          const isGrounded = m.role === 'assistant' && m.metadata.grounded === true;
+          return <article key={m.id} className={`conversation-bubble conversation-bubble--${m.role}`}><header><strong>{m.role === 'user' ? 'You' : m.role === 'assistant' ? 'Assistant' : m.role}</strong>{isGrounded && <Badge tone="success">Grounded</Badge>}{isAbstained && <Badge tone="warning">Abstained</Badge>}<time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header><p>{m.content}</p>{citations.length > 0 && <div className="conversation-citations"><small><strong>Sources:</strong> {citations.map(cit => `${cit.title} (${cit.chunkId.slice(0, 8)})`).join(' · ')}</small></div>}{m.role === 'assistant' && <details className="conversation-metadata"><summary>Response details</summary><small>{['mode', 'model', 'promptVersion', 'aiStatus', 'grounded', 'inputTokens', 'outputTokens', 'totalTokens', 'latencyMs'].filter(k => m.metadata[k] !== undefined).map(k => `${k}: ${String(m.metadata[k])}`).join(' · ')}</small></details>}</article>;
+        })}
         {thread.busy && <p role="status" className="conversation-generating"><Spinner size="sm" />Working… waiting for the complete response.</p>}<div ref={end} />
       </div>
       <CardBody className="conversation-composer"><form onSubmit={e => { e.preventDefault(); void thread.send(); }}>

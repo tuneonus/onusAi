@@ -169,7 +169,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
         assert.equal(signal, null);
       }
       const combined = first.output() + second.output();
-      assert.equal(combined.match(/Applied migration:/g)?.length, 20);
+      assert.equal(combined.match(/Applied migration:/g)?.length, 22);
       assert.match(combined, /Database migrations are up to date/);
       assert.ok(!combined.includes(scopedUrl.href));
       if (scopedUrl.password) assert.ok(!combined.includes(scopedUrl.password));
@@ -178,7 +178,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       lock.release();
     }
     const versions = await postgresPool.query('SELECT version FROM schema_migrations ORDER BY version');
-    assert.deepEqual(versions.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+    assert.deepEqual(versions.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
   });
 
   await t.test('repeated execution preserves history and reports no pending migrations', async () => {
@@ -211,6 +211,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       { tablename: 'assistants', indexname: 'assistants_pkey' },
       { tablename: 'auth_login_attempts', indexname: 'auth_login_attempts_locked_until_idx' },
       { tablename: 'auth_login_attempts', indexname: 'auth_login_attempts_pkey' },
+      { tablename: 'business_knowledge_versions', indexname: 'business_knowledge_versions_pkey' },
       { tablename: 'business_locations', indexname: 'business_locations_business_active_idx' },
       { tablename: 'business_locations', indexname: 'business_locations_business_id_unique' },
       { tablename: 'business_locations', indexname: 'business_locations_business_name_unique' },
@@ -260,6 +261,10 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       { tablename: 'user_credentials', indexname: 'user_credentials_pkey' },
       { tablename: 'users', indexname: 'users_email_unique' },
       { tablename: 'users', indexname: 'users_pkey' },
+      { tablename: 'vector_cleanup_jobs', indexname: 'vector_cleanup_jobs_business_doc_idx' },
+      { tablename: 'vector_cleanup_jobs', indexname: 'vector_cleanup_jobs_expired_lease_idx' },
+      { tablename: 'vector_cleanup_jobs', indexname: 'vector_cleanup_jobs_pkey' },
+      { tablename: 'vector_cleanup_jobs', indexname: 'vector_cleanup_jobs_poll_idx' },
     ]);
 
     await inTransaction(async (client) => {
@@ -403,7 +408,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       }
       await assert.rejects(runMigrations(directory), /Migration history differs from local files/);
       const history = await postgresPool.query('SELECT count(*)::integer AS count FROM schema_migrations');
-      assert.equal(history.rows[0].count, 20);
+      assert.equal(history.rows[0].count, 22);
     }
   });
 
@@ -429,7 +434,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
     const rolledBack = await postgresPool.query("SELECT to_regclass('pending_probe') AS pending, to_regclass('partial_probe') AS partial");
     assert.deepEqual(rolledBack.rows, [{ pending: null, partial: null }]);
     const history = await postgresPool.query('SELECT version FROM schema_migrations ORDER BY version');
-    assert.deepEqual(history.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+    assert.deepEqual(history.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
 
     await writeFile(failingFile, 'CREATE TABLE corrected_probe (id integer);');
     assert.deepEqual(await runMigrations(directory), ['0098_pending.sql', '0099_failure.sql']);

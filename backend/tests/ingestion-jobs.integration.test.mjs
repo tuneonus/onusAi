@@ -82,7 +82,7 @@ test('live durable ingestion jobs: auto-enqueue, concurrency, lease expiry, retr
   const { app } = await import('../dist/app.js');
 
   const applied = await runMigrations();
-  assert.equal(applied.length, 20);
+  assert.equal(applied.length, 22);
 
   function buildChunkingPayload(text) {
     const sha = createHash('sha256').update(text, 'utf8').digest('hex');
@@ -357,6 +357,122 @@ test('live durable ingestion jobs: auto-enqueue, concurrency, lease expiry, retr
     assert.equal(v2ReplaceBody.version.versionNumber, 2);
     assert.equal(v2ReplaceBody.version.status, 'uploaded');
 
+    // Lease v2 and complete WITH vector indexing metadata -> marks v2 'ready' & active
+    const leaseV2Res = await fetch(`${baseUrl}/api/v1/internal/ingestion-jobs/lease`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${mintWorkerToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ workerId: 'worker-index', leaseDurationSeconds: 60 }),
+    });
+    assert.equal(leaseV2Res.status, 200);
+    const leasedV2 = await leaseV2Res.json();
+    assert.equal(leasedV2.job.documentVersionId, v2ReplaceBody.version.id);
+
+    const completeV2Res = await fetch(
+      `${baseUrl}/api/v1/internal/ingestion-jobs/${leasedV2.job.id}/complete`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mintWorkerToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          leaseToken: leasedV2.job.leaseToken,
+          businessId,
+          documentVersionId: v2ReplaceBody.version.id,
+          chunking: buildChunkingPayload(leasedV2.document.contentText),
+          indexing: {
+            embeddingModel: 'gemini-embedding-001',
+            embeddingModelVersion: 'embed-v1',
+            embeddingDimensions: 768,
+            qdrantCollection: 'onussync_chunks__embed-v1__d768',
+            indexedChunkCount: 1,
+          },
+        }),
+      },
+    );
+    assert.equal(completeV2Res.status, 200);
+
+    const readyDocDetail = await (
+      await fetch(`${baseUrl}/api/v1/businesses/${businessId}/documents/${document.id}`, {
+        headers: { Cookie: ownerAuth.cookieHeader },
+      })
+    ).json();
+    assert.equal(readyDocDetail.document.status, 'ready');
+    assert.equal(readyDocDetail.document.activeVersionId, v2ReplaceBody.version.id);
+    assert.equal(readyDocDetail.versions[0].status, 'ready');
+    assert.ok(readyDocDetail.versions[0].indexedAt);
+    assert.equal(readyDocDetail.versions[0].embeddingModel, 'gemini-embedding-001');
+    assert.equal(readyDocDetail.versions[0].embeddingModelVersion, 'embed-v1');
+    assert.equal(readyDocDetail.versions[0].embeddingDimensions, 768);
+    assert.equal(readyDocDetail.versions[0].qdrantCollection, 'onussync_chunks__embed-v1__d768');
+
+    // Upload v3 and complete WITH indexing -> supersedes ready v2 cleanly
+    const v3ReplaceRes = await fetch(
+      `${baseUrl}/api/v1/businesses/${businessId}/documents/${document.id}/versions`,
+      {
+        method: 'POST',
+        headers: {
+          Cookie: ownerAuth.cookieHeader,
+          'X-CSRF-Token': ownerAuth.csrfToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ filename: 'kb-v3.md', content: '# Knowledge v3\nNewest.' }),
+      },
+    );
+    assert.equal(v3ReplaceRes.status, 201);
+    const v3Body = await v3ReplaceRes.json();
+
+    const leaseV3 = await (
+      await fetch(`${baseUrl}/api/v1/internal/ingestion-jobs/lease`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mintWorkerToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ workerId: 'worker-index', leaseDurationSeconds: 60 }),
+      })
+    ).json();
+    assert.equal(leaseV3.job.documentVersionId, v3Body.version.id);
+
+    const completeV3Res = await fetch(
+      `${baseUrl}/api/v1/internal/ingestion-jobs/${leaseV3.job.id}/complete`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mintWorkerToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          leaseToken: leaseV3.job.leaseToken,
+          businessId,
+          documentVersionId: v3Body.version.id,
+          chunking: buildChunkingPayload(leaseV3.document.contentText),
+          indexing: {
+            embeddingModel: 'gemini-embedding-001',
+            embeddingModelVersion: 'embed-v1',
+            embeddingDimensions: 768,
+            qdrantCollection: 'onussync_chunks__embed-v1__d768',
+            indexedChunkCount: 1,
+          },
+        }),
+      },
+    );
+    assert.equal(completeV3Res.status, 200);
+
+    const afterV3Detail = await (
+      await fetch(`${baseUrl}/api/v1/businesses/${businessId}/documents/${document.id}`, {
+        headers: { Cookie: ownerAuth.cookieHeader },
+      })
+    ).json();
+    assert.equal(afterV3Detail.document.activeVersionId, v3Body.version.id);
+    assert.equal(afterV3Detail.versions[0].id, v3Body.version.id);
+    assert.equal(afterV3Detail.versions[0].status, 'ready');
+    assert.equal(afterV3Detail.versions[1].id, v2ReplaceBody.version.id);
+    assert.equal(afterV3Detail.versions[1].status, 'superseded');
+
     // Staff can inspect jobs (leaseToken is omitted from staff view)
     const jobsRes = await fetch(
       `${baseUrl}/api/v1/businesses/${businessId}/documents/${document.id}/jobs`,
@@ -364,9 +480,112 @@ test('live durable ingestion jobs: auto-enqueue, concurrency, lease expiry, retr
     );
     assert.equal(jobsRes.status, 200);
     const jobsBody = await jobsRes.json();
-    assert.equal(jobsBody.jobs.length, 1);
+    assert.equal(jobsBody.jobs.length, 3);
     assert.equal(jobsBody.jobs[0].status, 'completed');
     assert.equal('leaseToken' in jobsBody.jobs[0], false);
+  });
+
+  await t.test('leases existing chunked documents with existingChunks and marks ready on indexing completion', async () => {
+    const uploadRes = await fetch(`${baseUrl}/api/v1/businesses/${businessId}/documents`, {
+      method: 'POST',
+      headers: {
+        Cookie: ownerAuth.cookieHeader,
+        'X-CSRF-Token': ownerAuth.csrfToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ filename: 'prechunked.md', content: '# Prechunked\nAwaiting vector index.' }),
+    });
+    assert.equal(uploadRes.status, 201);
+    const { document, version } = await uploadRes.json();
+
+    // First lease & chunk-only complete (simulating 05.03)
+    const lease1 = await (
+      await fetch(`${baseUrl}/api/v1/internal/ingestion-jobs/lease`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mintWorkerToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ workerId: 'worker-chunk', leaseDurationSeconds: 60 }),
+      })
+    ).json();
+    assert.equal(lease1.job.documentVersionId, version.id);
+
+    const chunking = buildChunkingPayload(lease1.document.contentText);
+    const complete1Res = await fetch(
+      `${baseUrl}/api/v1/internal/ingestion-jobs/${lease1.job.id}/complete`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mintWorkerToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          leaseToken: lease1.job.leaseToken,
+          businessId,
+          documentVersionId: version.id,
+          chunking,
+        }),
+      },
+    );
+    assert.equal(complete1Res.status, 200);
+
+    // Re-queue job as migration 0021 does for existing chunked documents awaiting indexing
+    await postgresPool.query(
+      `UPDATE document_ingestion_jobs
+       SET status = 'queued', attempt_count = 0, completed_at = NULL, next_attempt_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [lease1.job.id],
+    );
+
+    const lease2 = await (
+      await fetch(`${baseUrl}/api/v1/internal/ingestion-jobs/lease`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mintWorkerToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ workerId: 'worker-embed', leaseDurationSeconds: 60 }),
+      })
+    ).json();
+    assert.equal(lease2.job.documentVersionId, version.id);
+    assert.equal(lease2.document.existingChunkVersion, 'chunk-v1');
+    assert.equal(lease2.document.existingChunks.length, 1);
+    assert.equal(lease2.document.existingChunks[0].chunkId, chunking.chunks[0].chunkId);
+
+    const complete2Res = await fetch(
+      `${baseUrl}/api/v1/internal/ingestion-jobs/${lease2.job.id}/complete`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${mintWorkerToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          leaseToken: lease2.job.leaseToken,
+          businessId,
+          documentVersionId: version.id,
+          chunking,
+          indexing: {
+            embeddingModel: 'gemini-embedding-001',
+            embeddingModelVersion: 'embed-v1',
+            embeddingDimensions: 768,
+            qdrantCollection: 'onussync_chunks__embed-v1__d768',
+            indexedChunkCount: 1,
+          },
+        }),
+      },
+    );
+    assert.equal(complete2Res.status, 200);
+
+    const detail = await (
+      await fetch(`${baseUrl}/api/v1/businesses/${businessId}/documents/${document.id}`, {
+        headers: { Cookie: ownerAuth.cookieHeader },
+      })
+    ).json();
+    assert.equal(detail.document.status, 'ready');
+    assert.equal(detail.document.activeVersionId, version.id);
+    assert.equal(detail.versions[0].status, 'ready');
   });
 
   await t.test('recovers expired leases, enforces max retry attempts, and supports staff retry', async () => {

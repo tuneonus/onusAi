@@ -3,6 +3,10 @@ import type { PoolClient } from 'pg';
 import { postgresPool } from '../../integrations/database/postgres.js';
 import { HttpError } from '../../utils/http-error.js';
 import type { DocumentMimeType, DocumentSourceType, DocumentVisibility } from '../documents/documents.types.js';
+import {
+  bumpKnowledgeEpoch,
+  enqueueVectorCleanupJob,
+} from '../vector-cleanup/vector-cleanup.repository.js';
 import type {
   CompleteJobInput,
   FailJobInput,
@@ -41,6 +45,20 @@ interface LeasedPayloadRow extends IngestionJobRow {
   char_count: number;
   content_sha256: string;
   content_text: string;
+  chunk_version: string | null;
+  normalized_char_count: number | null;
+  normalized_sha256: string | null;
+}
+
+interface ExistingChunkRow {
+  id: string;
+  chunk_index: number;
+  heading_path: string[];
+  char_start: number;
+  char_end: number;
+  char_count: number;
+  content_sha256: string;
+  chunk_text: string;
 }
 
 const JOB_COLUMNS = `
@@ -296,7 +314,8 @@ export async function leaseNextIngestionJob(
          j.completed_at, j.created_at, j.updated_at,
          dv.version_number, d.visibility, d.location_id,
          dv.source_filename, dv.mime_type, dv.source_type,
-         dv.byte_size, dv.char_count, dv.content_sha256, dv.content_text
+         dv.byte_size, dv.char_count, dv.content_sha256, dv.content_text,
+         dv.chunk_version, dv.normalized_char_count, dv.normalized_sha256
        FROM document_ingestion_jobs j
        JOIN documents d
          ON d.business_id = j.business_id AND d.id = j.document_id
@@ -307,6 +326,19 @@ export async function leaseNextIngestionJob(
     );
 
     const row = payloadResult.rows[0]!;
+    const existingChunksResult = await client.query<ExistingChunkRow>(
+      `SELECT id, chunk_index, heading_path, char_start, char_end, char_count, content_sha256, chunk_text
+       FROM document_chunks
+       WHERE business_id = $1 AND document_version_id = $2
+       ORDER BY chunk_index ASC`,
+      [jobRow.business_id, jobRow.document_version_id],
+    );
+
+    const hasExistingChunks =
+      existingChunksResult.rows.length > 0 &&
+      row.chunk_version !== null &&
+      row.normalized_char_count !== null &&
+      row.normalized_sha256 !== null;
 
     return {
       job: mapJobRow(row),
@@ -321,6 +353,23 @@ export async function leaseNextIngestionJob(
         charCount: row.char_count,
         contentSha256: row.content_sha256,
         contentText: row.content_text,
+        ...(hasExistingChunks
+          ? {
+              existingChunkVersion: row.chunk_version,
+              existingNormalizedCharCount: row.normalized_char_count,
+              existingNormalizedSha256: row.normalized_sha256,
+              existingChunks: existingChunksResult.rows.map((chunk) => ({
+                chunkId: chunk.id,
+                chunkIndex: chunk.chunk_index,
+                headingPath: chunk.heading_path,
+                charStart: chunk.char_start,
+                charEnd: chunk.char_end,
+                charCount: chunk.char_count,
+                contentSha256: chunk.content_sha256,
+                chunkText: chunk.chunk_text,
+              })),
+            }
+          : {}),
       },
     };
   });
@@ -391,6 +440,22 @@ export async function completeIngestionJob(
       throw new HttpError(409, 'DOCUMENT_DELETED', 'Cannot store chunks for a deleted document.');
     }
 
+    const versionStateResult = await client.query<{ status: string }>(
+      `SELECT status
+       FROM document_versions
+       WHERE business_id = $1 AND id = $2
+       FOR UPDATE`,
+      [job.business_id, job.document_version_id],
+    );
+    const versionStatus = versionStateResult.rows[0]?.status;
+    if (versionStatus !== 'uploaded' && versionStatus !== 'processing') {
+      throw new HttpError(
+        409,
+        'INVALID_DOCUMENT_STATE',
+        'Document version is no longer pending or processing.',
+      );
+    }
+
     // Replace any prior chunks for this version so retries/reprocessing are idempotent.
     await client.query(
       `DELETE FROM document_chunks
@@ -427,25 +492,87 @@ export async function completeIngestionJob(
       );
     }
 
-    await client.query(
-      `UPDATE document_versions
-       SET chunk_version = $3,
-           chunk_count = $4,
-           normalized_char_count = $5,
-           normalized_sha256 = $6
-       WHERE business_id = $1 AND id = $2`,
-      [
-        job.business_id,
-        job.document_version_id,
-        chunking.chunkVersion,
-        chunking.chunks.length,
-        chunking.normalizedCharCount,
-        chunking.normalizedSha256,
-      ],
-    );
+    if (input.indexing) {
+      const superseded = await client.query<{ id: string; qdrant_collection: string | null }>(
+        `UPDATE document_versions
+         SET status = 'superseded'
+         WHERE business_id = $1
+           AND document_id = $2
+           AND id <> $3
+           AND status = 'ready'
+         RETURNING id, qdrant_collection`,
+        [job.business_id, job.document_id, job.document_version_id],
+      );
 
-    // Note: Completing a 05.03 chunking job does NOT mark document_versions as 'ready'
-    // or set indexed_at; actual vector indexing occurs in Phase 06.
+      for (const oldVer of superseded.rows) {
+        await enqueueVectorCleanupJob(client, {
+          businessId: job.business_id,
+          documentId: job.document_id,
+          documentVersionId: oldVer.id,
+          qdrantCollection: oldVer.qdrant_collection,
+          jobType: 'delete_version',
+        });
+      }
+
+      await bumpKnowledgeEpoch(client, job.business_id, 'version_activated');
+
+      await client.query(
+        `UPDATE document_versions
+         SET status = 'ready',
+             indexed_at = CURRENT_TIMESTAMP,
+             failure_reason = NULL,
+             chunk_version = $3,
+             chunk_count = $4,
+             normalized_char_count = $5,
+             normalized_sha256 = $6,
+             embedding_model = $7,
+             embedding_model_version = $8,
+             embedding_dimensions = $9,
+             qdrant_collection = $10
+         WHERE business_id = $1 AND id = $2`,
+        [
+          job.business_id,
+          job.document_version_id,
+          chunking.chunkVersion,
+          chunking.chunks.length,
+          chunking.normalizedCharCount,
+          chunking.normalizedSha256,
+          input.indexing.embeddingModel,
+          input.indexing.embeddingModelVersion,
+          input.indexing.embeddingDimensions,
+          input.indexing.qdrantCollection,
+        ],
+      );
+
+      await client.query(
+        `UPDATE documents
+         SET active_version_id = $3,
+             status = 'ready'
+         WHERE business_id = $1
+           AND id = $2
+           AND deleted_at IS NULL`,
+        [job.business_id, job.document_id, job.document_version_id],
+      );
+    } else {
+      await client.query(
+        `UPDATE document_versions
+         SET chunk_version = $3,
+             chunk_count = $4,
+             normalized_char_count = $5,
+             normalized_sha256 = $6
+         WHERE business_id = $1 AND id = $2`,
+        [
+          job.business_id,
+          job.document_version_id,
+          chunking.chunkVersion,
+          chunking.chunks.length,
+          chunking.normalizedCharCount,
+          chunking.normalizedSha256,
+        ],
+      );
+    }
+
+    // Mark documents as ready only when vector indexing metadata is present.
     const updated = await client.query<IngestionJobRow>(
       `UPDATE document_ingestion_jobs
        SET status = 'completed',

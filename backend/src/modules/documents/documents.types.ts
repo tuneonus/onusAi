@@ -59,6 +59,10 @@ export interface DocumentVersionSummary {
   chunkCount: number;
   normalizedCharCount: number | null;
   normalizedSha256: string | null;
+  embeddingModel: string | null;
+  embeddingModelVersion: string | null;
+  embeddingDimensions: number | null;
+  qdrantCollection: string | null;
   failureReason: string | null;
   indexedAt: Date | null;
   createdByUserId: string | null;

@@ -11,6 +11,8 @@ import type {
   DocumentVersion,
   DocumentVersionSummary,
   DocumentVisibility,
+  KnowledgeSearchResponse,
+  KnowledgeSearchResult,
 } from './types.ts';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -392,5 +394,53 @@ export class KnowledgeApi {
     }
 
     return data.document;
+  }
+
+  async search(input: {
+    query: string;
+    topK?: number;
+    scoreThreshold?: number;
+    locationId?: string | null;
+  }): Promise<KnowledgeSearchResponse> {
+    this.signal.throwIfAborted();
+    if (!this.membership.businessId || !['owner', 'operator'].includes(this.membership.role)) {
+      throw new Error('No authorized workspace.');
+    }
+    const raw = await apiRequest<unknown>(
+      `/businesses/${encodeURIComponent(this.membership.businessId)}/knowledge/search`,
+      {
+        method: 'POST',
+        body: {
+          query: input.query,
+          ...(input.topK !== undefined ? { topK: input.topK } : {}),
+          ...(input.scoreThreshold !== undefined ? { scoreThreshold: input.scoreThreshold } : {}),
+          ...(input.locationId !== undefined ? { locationId: input.locationId } : {}),
+        },
+        signal: this.signal,
+      },
+    );
+    if (
+      !isObject(raw) ||
+      typeof raw.embeddingModel !== 'string' ||
+      typeof raw.embeddingDimensions !== 'number' ||
+      typeof raw.qdrantCollection !== 'string' ||
+      !Array.isArray(raw.results)
+    ) {
+      invalidResponse();
+    }
+    const validResults = raw.results.filter(
+      (item): item is KnowledgeSearchResult =>
+        isObject(item) &&
+        typeof item.chunkId === 'string' &&
+        typeof item.documentId === 'string' &&
+        typeof item.score === 'number' &&
+        typeof item.chunkText === 'string' &&
+        typeof item.sourceFilename === 'string' &&
+        isObject(item.citation),
+    );
+    if (validResults.length !== raw.results.length) {
+      invalidResponse();
+    }
+    return raw as unknown as KnowledgeSearchResponse;
   }
 }

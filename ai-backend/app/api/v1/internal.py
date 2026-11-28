@@ -15,6 +15,8 @@ from app.core.internal_auth import (
 )
 from app.modules.respond.schemas import AiRespondRequest, AiRespondResponse
 from app.modules.respond.service import generate_ai_response
+from app.modules.retrieval.schemas import AiRetrieveRequest, AiRetrieveResponse
+from app.modules.retrieval.service import perform_scoped_retrieval
 
 router = APIRouter(prefix="/internal", tags=["Internal"])
 
@@ -78,6 +80,52 @@ async def post_internal_respond(
             payload,
             settings,
             getattr(request.app.state, "gemini_adapter", None),
+            getattr(request.app.state, "embedding_adapter", None),
+        ),
+        remaining_ms,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Request-Id"] = payload.request_id
+    return result
+
+
+@router.post("/retrieve", response_model=AiRetrieveResponse)
+async def post_internal_retrieve(
+    request: Request,
+    response: Response,
+    payload: AiRetrieveRequest,
+    auth: Annotated[
+        InternalServiceContext,
+        Depends(require_internal_service_auth("ai:retrieve")),
+    ],
+) -> AiRetrieveResponse:
+    """Embed query with RETRIEVAL_QUERY, search Qdrant with tenant/scope filters, and validate via Node.js."""
+    if (
+        "x-request-id" in request.headers
+        and getattr(request.state, "request_id", None) != payload.request_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Request ID mismatch between header and payload.",
+        )
+
+    settings: Settings = request.app.state.settings
+    now_ms = int(time.time() * 1000)
+    remaining_ms = payload.deadline_at_ms - now_ms
+
+    if remaining_ms <= 0:
+        raise HTTPException(status_code=504, detail="AI request deadline exceeded.")
+
+    if remaining_ms > settings.internal_max_deadline_ms:
+        raise HTTPException(
+            status_code=422, detail="AI request deadline exceeds allowed maximum."
+        )
+
+    result = await run_with_deadline(
+        perform_scoped_retrieval(
+            payload,
+            settings,
+            embedding_adapter=getattr(request.app.state, "embedding_adapter", None),
         ),
         remaining_ms,
     )

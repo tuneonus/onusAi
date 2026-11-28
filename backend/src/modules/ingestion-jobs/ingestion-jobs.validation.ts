@@ -6,11 +6,19 @@ import type {
   CompleteJobInput,
   DocumentChunkInput,
   FailJobInput,
+  IndexingPayloadInput,
   LeaseJobInput,
 } from './ingestion-jobs.types.js';
 
 const LEASE_FIELDS = new Set(['workerId', 'leaseDurationSeconds']);
-const COMPLETE_FIELDS = new Set(['leaseToken', 'businessId', 'documentVersionId', 'chunking']);
+const COMPLETE_FIELDS = new Set(['leaseToken', 'businessId', 'documentVersionId', 'chunking', 'indexing']);
+const INDEXING_FIELDS = new Set([
+  'embeddingModel',
+  'embeddingModelVersion',
+  'embeddingDimensions',
+  'qdrantCollection',
+  'indexedChunkCount',
+]);
 const CHUNKING_FIELDS = new Set([
   'chunkVersion',
   'chunkMaxChars',
@@ -212,16 +220,98 @@ function validateChunkingPayload(raw: unknown): ChunkingPayloadInput {
   };
 }
 
+const COLLECTION_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function validateIndexingPayload(raw: unknown, expectedChunkCount: number): IndexingPayloadInput {
+  const record = assertPlainObject(raw, 'indexing must be a JSON object.');
+  assertAllowedFields(record, INDEXING_FIELDS);
+
+  const {
+    embeddingModel,
+    embeddingModelVersion,
+    embeddingDimensions,
+    qdrantCollection,
+    indexedChunkCount,
+  } = record;
+
+  if (
+    typeof embeddingModel !== 'string' ||
+    embeddingModel.length < 1 ||
+    embeddingModel.length > 100 ||
+    !CHUNK_VERSION_PATTERN.test(embeddingModel)
+  ) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'embeddingModel is invalid.');
+  }
+
+  if (
+    typeof embeddingModelVersion !== 'string' ||
+    embeddingModelVersion.length < 1 ||
+    embeddingModelVersion.length > 64 ||
+    !CHUNK_VERSION_PATTERN.test(embeddingModelVersion)
+  ) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'embeddingModelVersion is invalid.');
+  }
+
+  if (
+    typeof embeddingDimensions !== 'number' ||
+    !Number.isInteger(embeddingDimensions) ||
+    embeddingDimensions < 128 ||
+    embeddingDimensions > 3072
+  ) {
+    throw new HttpError(
+      400,
+      'VALIDATION_ERROR',
+      'embeddingDimensions must be an integer between 128 and 3072.',
+    );
+  }
+
+  if (
+    typeof qdrantCollection !== 'string' ||
+    qdrantCollection.length < 1 ||
+    qdrantCollection.length > 160 ||
+    !COLLECTION_NAME_PATTERN.test(qdrantCollection)
+  ) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'qdrantCollection is invalid.');
+  }
+
+  if (
+    typeof indexedChunkCount !== 'number' ||
+    !Number.isInteger(indexedChunkCount) ||
+    indexedChunkCount !== expectedChunkCount
+  ) {
+    throw new HttpError(
+      400,
+      'VALIDATION_ERROR',
+      'indexedChunkCount must match chunking.chunks.length.',
+    );
+  }
+
+  return {
+    embeddingModel,
+    embeddingModelVersion,
+    embeddingDimensions,
+    qdrantCollection,
+    indexedChunkCount,
+  };
+}
+
 export function validateCompleteJobInput(body: unknown): CompleteJobInput {
   const record = assertPlainObject(body, 'Request body must be a JSON object.');
   assertAllowedFields(record, COMPLETE_FIELDS);
 
-  return {
+  const chunking = validateChunkingPayload(record.chunking);
+  const result: CompleteJobInput = {
     leaseToken: validateUuid(record.leaseToken, 'leaseToken'),
     businessId: validateUuid(record.businessId, 'businessId'),
     documentVersionId: validateUuid(record.documentVersionId, 'documentVersionId'),
-    chunking: validateChunkingPayload(record.chunking),
+    chunking,
   };
+
+  if (record.indexing !== undefined) {
+    result.indexing = validateIndexingPayload(record.indexing, chunking.chunks.length);
+  }
+
+  return result;
 }
 
 export function validateFailJobInput(body: unknown): FailJobInput {

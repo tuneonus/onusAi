@@ -129,6 +129,35 @@ test('ingestion job validation enforces strict payloads and bounds', () => {
   };
   assert.deepEqual(validateCompleteJobInput(validComplete), validComplete);
 
+  const validCompleteWithIndexing = {
+    ...validComplete,
+    indexing: {
+      embeddingModel: 'gemini-embedding-001',
+      embeddingModelVersion: 'embed-v1',
+      embeddingDimensions: 768,
+      qdrantCollection: 'onussync_chunks__embed-v1__d768',
+      indexedChunkCount: 1,
+    },
+  };
+  assert.deepEqual(validateCompleteJobInput(validCompleteWithIndexing), validCompleteWithIndexing);
+
+  assert.throws(
+    () =>
+      validateCompleteJobInput({
+        ...validCompleteWithIndexing,
+        indexing: { ...validCompleteWithIndexing.indexing, indexedChunkCount: 2 },
+      }),
+    (err) => err.statusCode === 400,
+  );
+  assert.throws(
+    () =>
+      validateCompleteJobInput({
+        ...validCompleteWithIndexing,
+        indexing: { ...validCompleteWithIndexing.indexing, embeddingDimensions: 64 },
+      }),
+    (err) => err.statusCode === 400,
+  );
+
   // Missing chunking or tampered SHA-256 rejected
   assert.throws(
     () => validateCompleteJobInput(ids),
