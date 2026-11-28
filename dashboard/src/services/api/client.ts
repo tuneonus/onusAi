@@ -83,7 +83,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const headers = new Headers(options.headers);
   headers.set('Accept', 'application/json');
 
-  if (options.body !== undefined) {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
+  if (options.body !== undefined && !isFormData) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -102,7 +104,12 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       method,
       headers,
       credentials: 'include',
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body:
+        options.body === undefined
+          ? undefined
+          : isFormData
+            ? (options.body as FormData)
+            : JSON.stringify(options.body),
       signal: options.signal,
     });
   } catch (error) {

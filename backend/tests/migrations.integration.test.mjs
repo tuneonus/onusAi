@@ -169,7 +169,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
         assert.equal(signal, null);
       }
       const combined = first.output() + second.output();
-      assert.equal(combined.match(/Applied migration:/g)?.length, 15);
+      assert.equal(combined.match(/Applied migration:/g)?.length, 20);
       assert.match(combined, /Database migrations are up to date/);
       assert.ok(!combined.includes(scopedUrl.href));
       if (scopedUrl.password) assert.ok(!combined.includes(scopedUrl.password));
@@ -178,7 +178,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       lock.release();
     }
     const versions = await postgresPool.query('SELECT version FROM schema_migrations ORDER BY version');
-    assert.deepEqual(versions.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    assert.deepEqual(versions.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
   });
 
   await t.test('repeated execution preserves history and reports no pending migrations', async () => {
@@ -230,6 +230,27 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       { tablename: 'conversations', indexname: 'conversations_idempotency_unique' },
       { tablename: 'conversations', indexname: 'conversations_pkey' },
       { tablename: 'conversations', indexname: 'conversations_retain_until_idx' },
+      { tablename: 'document_chunks', indexname: 'document_chunks_business_version_idx' },
+      { tablename: 'document_chunks', indexname: 'document_chunks_business_visibility_idx' },
+      { tablename: 'document_chunks', indexname: 'document_chunks_pkey' },
+      { tablename: 'document_chunks', indexname: 'document_chunks_version_index_unique' },
+      { tablename: 'document_ingestion_jobs', indexname: 'document_ingestion_jobs_business_doc_idx' },
+      { tablename: 'document_ingestion_jobs', indexname: 'document_ingestion_jobs_expired_lease_idx' },
+      { tablename: 'document_ingestion_jobs', indexname: 'document_ingestion_jobs_lease_poll_idx' },
+      { tablename: 'document_ingestion_jobs', indexname: 'document_ingestion_jobs_one_active_per_version_idx' },
+      { tablename: 'document_ingestion_jobs', indexname: 'document_ingestion_jobs_pkey' },
+      { tablename: 'document_versions', indexname: 'document_versions_business_document_idx' },
+      { tablename: 'document_versions', indexname: 'document_versions_business_id_unique' },
+      { tablename: 'document_versions', indexname: 'document_versions_document_id_unique' },
+      { tablename: 'document_versions', indexname: 'document_versions_number_unique' },
+      { tablename: 'document_versions', indexname: 'document_versions_one_pending_idx' },
+      { tablename: 'document_versions', indexname: 'document_versions_one_ready_idx' },
+      { tablename: 'document_versions', indexname: 'document_versions_pkey' },
+      { tablename: 'documents', indexname: 'documents_business_active_idx' },
+      { tablename: 'documents', indexname: 'documents_business_id_unique' },
+      { tablename: 'documents', indexname: 'documents_business_location_idx' },
+      { tablename: 'documents', indexname: 'documents_business_visibility_idx' },
+      { tablename: 'documents', indexname: 'documents_pkey' },
       { tablename: 'schema_migrations', indexname: 'schema_migrations_filename_key' },
       { tablename: 'schema_migrations', indexname: 'schema_migrations_pkey' },
       { tablename: 'staff_sessions', indexname: 'staff_sessions_active_expires_at_idx' },
@@ -382,7 +403,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
       }
       await assert.rejects(runMigrations(directory), /Migration history differs from local files/);
       const history = await postgresPool.query('SELECT count(*)::integer AS count FROM schema_migrations');
-      assert.equal(history.rows[0].count, 15);
+      assert.equal(history.rows[0].count, 20);
     }
   });
 
@@ -408,7 +429,7 @@ test('live migrations and core tenant schema', { skip: !databaseUrl, timeout: 45
     const rolledBack = await postgresPool.query("SELECT to_regclass('pending_probe') AS pending, to_regclass('partial_probe') AS partial");
     assert.deepEqual(rolledBack.rows, [{ pending: null, partial: null }]);
     const history = await postgresPool.query('SELECT version FROM schema_migrations ORDER BY version');
-    assert.deepEqual(history.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    assert.deepEqual(history.rows.map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
 
     await writeFile(failingFile, 'CREATE TABLE corrected_probe (id integer);');
     assert.deepEqual(await runMigrations(directory), ['0098_pending.sql', '0099_failure.sql']);

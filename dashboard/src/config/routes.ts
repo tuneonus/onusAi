@@ -9,6 +9,7 @@ export const ROUTES = {
   locations: '/locations',
   staff: '/staff',
   assistants: '/assistants',
+  knowledge: '/knowledge',
   conversations: '/conversations',
   diagnostics: '/diagnostics',
 } as const;
@@ -62,6 +63,14 @@ export const DASHBOARD_NAV_ITEMS: readonly NavItemConfig[] = [
     label: 'Assistants',
     description: 'Assistant personas, model guardrails, tool scopes, and version publishing.',
     icon: 'bot',
+    implemented: true,
+    section: 'workspace',
+  },
+  {
+    path: ROUTES.knowledge,
+    label: 'Knowledge Base',
+    description: 'TXT and Markdown uploads, visibility, versions, ingestion jobs, and chunks.',
+    icon: 'fileText',
     implemented: true,
     section: 'workspace',
   },

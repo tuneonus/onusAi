@@ -33,7 +33,7 @@ test('unspecified optional settings receive safe development defaults', () => {
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
     databaseQueryTimeoutMs: 5000, authSessionTtlMs: 28_800_000,
     authLoginMaxAttempts: 5, authLoginWindowMs: 900_000, authLoginLockoutMs: 900_000,
-    conversationRetentionDays: 90,
+    conversationRetentionDays: 90, documentMaxBytes: 262_144,
   });
 });
 
@@ -49,7 +49,7 @@ test('valid environment values and multiple origins are parsed', () => {
     AI_INTERNAL_AUTH_AUDIENCE: 'custom-ai-backend',
     AUTH_SESSION_TTL_MS: '60000', AUTH_LOGIN_MAX_ATTEMPTS: '8',
     AUTH_LOGIN_WINDOW_MS: '120000', AUTH_LOGIN_LOCKOUT_MS: '300000',
-    CONVERSATION_RETENTION_DAYS: '180',
+    CONVERSATION_RETENTION_DAYS: '180', DOCUMENT_MAX_BYTES: '524288',
   });
   assert.deepEqual(result, {
     port: 4100, nodeEnv: 'production',
@@ -60,7 +60,7 @@ test('valid environment values and multiple origins are parsed', () => {
     databaseUrl, databaseConnectionTimeoutMs: 5000, databaseIdleTimeoutMs: 30000,
     databaseQueryTimeoutMs: 5000, authSessionTtlMs: 60_000,
     authLoginMaxAttempts: 8, authLoginWindowMs: 120_000, authLoginLockoutMs: 300_000,
-    conversationRetentionDays: 180,
+    conversationRetentionDays: 180, documentMaxBytes: 524_288,
   });
 });
 
@@ -88,7 +88,7 @@ test('the trackable example contains valid non-secret configuration', () => {
     'AI_INTERNAL_AUTH_TOKEN_TTL_SECONDS', 'AI_SERVICE_TIMEOUT_MS', 'AI_SERVICE_URL',
     'AUTH_LOGIN_LOCKOUT_MS', 'AUTH_LOGIN_MAX_ATTEMPTS', 'AUTH_LOGIN_WINDOW_MS', 'AUTH_SESSION_TTL_MS',
     'CONVERSATION_RETENTION_DAYS', 'CORS_ORIGIN', 'DATABASE_CONNECTION_TIMEOUT_MS', 'DATABASE_IDLE_TIMEOUT_MS',
-    'DATABASE_QUERY_TIMEOUT_MS', 'DATABASE_URL', 'NODE_ENV', 'PORT',
+    'DATABASE_QUERY_TIMEOUT_MS', 'DATABASE_URL', 'DOCUMENT_MAX_BYTES', 'NODE_ENV', 'PORT',
   ]);
   assert.equal(validateEnvironment(example).port, 3000);
 });

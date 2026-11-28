@@ -722,7 +722,7 @@ Phase `03` (`03.01`–`03.04`) is verified complete. Await user review and appro
 | 02 | FastAPI AI-service foundation and tests | Verified (`02.01`–`02.03` complete) |
 | 04 | PostgreSQL, authentication/tenancy, business/location/assistant settings, branding, and conversations | Steps `04.01`–`04.05` (migrations `0001`–`0015`) verified; automated retention purge job, cross-store cleanup, RLS (`13.01`), and visitor sessions (`12.01`) remain deferred |
 | 03 | Internal service auth, AI contracts, and Google Gemini | **Verified complete** (`03.01`–`03.04` verified, including live `gemini-3.5-flash-lite` baseline; answers labeled `grounded: false` until Phase `06`) |
-| 05 | Documents, ingestion, and chunking (Backend + AI Worker) | Not started; steps `05.01`–`05.03` |
+| 05 | Documents, ingestion, and chunking (Backend + AI Worker) | **Verified complete** (`05.01`–`05.03`, migrations `0016`–`0019`) |
 | 06 | Embeddings, Qdrant, semantic search, and grounded RAG | Not started; steps `06.01`–`06.04` |
 | 07 | LangChain, deterministic business operations, and tool calling | Not started; steps `07.01`–`07.04` |
 | 08 | LangGraph, memory, and human-in-the-loop approvals (Backend) | Not started; steps `08.01`–`08.03` |
@@ -789,3 +789,129 @@ Date: 27 November 2026 (Asia/Kolkata). Scope: **branding-only rename from OnusAI
   - `backend`: `npm run db:migrate` (`Database migrations are up to date.`), `npm run typecheck` (clean), `npm test` with `TEST_DATABASE_URL="$DATABASE_URL"` (**128 passed, 0 failed, 0 skipped**).
   - `ai-backend`: `.venv/bin/python -m unittest discover -s tests -v` (**42 passed, 0 failed**), `compileall` clean, `pip check` (`No broken requirements found.`).
   - `dashboard`: `npm run build` clean, `npm run lint` clean, `npm test` (**47 passed, 0 failed**). Dashboard browser tests (`dashboard/tests/browser/`) were not executed in this pass.
+
+## Document upload, metadata, and bounded text storage (05.01) — verified approved scope
+
+Date: 28 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and dependencies
+
+Implemented only OnusSync Phase `05`, Step `05.01` (`FR-05`): TXT and Markdown document uploads, metadata and bounded UTF-8 text storage in PostgreSQL, document versioning, lifecycle state transitions, tenant-scoped knowledge visibility (`public` / `staff_only`, optional active location scope), validation of size/type/encoding/content, reuse of existing staff auth/CSRF/RBAC/tenant isolation, and document management APIs. No background ingestion, chunking, embeddings, Qdrant, RAG, or frontend changes were implemented. No additional npm or Python dependencies were installed (`multipart/form-data` parsing uses Node.js 24 built-in `Response.formData()`).
+
+### Database migrations & implemented files
+
+- `backend/database/migrations/0016_create_documents.sql`: Creates `documents` table with composite `(business_id, id)` uniqueness, composite `(business_id, location_id)` FK to `business_locations`, `visibility` (`public` / `staff_only`), lifecycle `status` (`uploaded`, `processing`, `ready`, `failed`, `deleted`), `current_version_number`, `active_version_id`, soft-delete audit columns, and `set_updated_at` trigger.
+- `backend/database/migrations/0017_create_document_versions.sql`: Creates `document_versions` table with composite FK to `documents`, bounded UTF-8 text (`content_text`, `byte_size <= 1048576`, `char_count`, `content_sha256`), `source_filename`, `mime_type` (`text/plain`, `text/markdown`), `source_type` (`txt`, `markdown`), `indexed_at` state constraint (enforcing `indexed_at IS NULL` for `uploaded`/`processing`/`failed`), partial unique indexes for one pending and one ready version per document, `documents_active_version_fk`, and `enforce_document_version_transitions()` trigger preventing content/metadata mutation and invalid state transitions.
+- `backend/src/config/env.ts` & `backend/.env.example`: Added `DOCUMENT_MAX_BYTES` (integer `1024`–`1048576`, default `262144` / 256 KiB).
+- `backend/src/modules/documents/`:
+  - `documents.types.ts`, `documents.validation.ts`, `documents.upload.ts`: Validates `.txt`/`.md`/`.markdown` extensions, compatible MIME types, bounded byte size (`413 PAYLOAD_TOO_LARGE`), strict UTF-8 decoding (`400 INVALID_DOCUMENT_ENCODING`), control-character/NUL rejection (`400 INVALID_DOCUMENT_CONTENT`), BOM stripping, `\n` normalization, SHA-256 hashing, and both `multipart/form-data` and `application/json` upload payloads.
+  - `documents.repository.ts`, `documents.service.ts`, `documents.controller.ts`, `documents.routes.ts`, `backend/src/modules/businesses/businesses.routes.ts`: Mounted at `/api/v1/businesses/:businessId/documents` (`GET /`, `POST /`, `GET /:documentId`, `PATCH /:documentId`, `DELETE /:documentId`, `GET /:documentId/versions`, `POST /:documentId/versions`, `GET /:documentId/versions/:versionId`, `POST /:documentId/versions/:versionId/retry`). Reuses `requireAuth`, `requireCsrf`, and `requireTenantMembership` (`owner` for mutations/uploads/retries/deletes; `owner`/`operator` for reads). Preserves any existing `ready` version as active while a replacement version is `uploaded`.
+- `backend/tests/documents.unit.test.mjs`, `backend/tests/documents.integration.test.mjs`, `backend/tests/env.test.mjs`, `backend/tests/migrations.integration.test.mjs`: Unit and live PostgreSQL tests covering size/type/encoding/content validation, multipart/JSON uploads, premature-indexing prevention, versioning/replacement, retry, soft deletion, SQL trigger enforcement, CSRF, RBAC, and two-tenant isolation.
+
+### Verification results & limitations
+
+- `cd backend && set -a && . ./.env && set +a && export TEST_DATABASE_URL="$DATABASE_URL" && npm run db:migrate && npm run typecheck && npm test`:
+  - `db:migrate`: Applied `0016_create_documents.sql` and `0017_create_document_versions.sql` cleanly.
+  - `typecheck` & `build`: Passed with zero errors.
+  - `npm test`: **137 passed, 0 failed, 0 skipped** (all existing unit/integration tests plus new document unit and live PostgreSQL integration tests).
+- **Limitations**: Uploaded documents remain in `uploaded` state (`activeVersionId: null`, `indexedAt: null`) until background ingestion jobs (`05.02`), normalization/chunking (`05.03`), and Qdrant vector indexing (`06.01`) are implemented. No Git commit or push was performed. Next proposed step: **Phase `05` — Step `05.02`** (awaiting user approval).
+
+## Durable background document ingestion jobs (05.02) — verified approved scope
+
+Date: 28 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and dependencies
+
+Implemented only OnusSync Phase `05`, Step `05.02`: durable PostgreSQL ingestion job records owned by Node.js, automatic job creation on document upload/replacement/retry, job cancellation on supersede/soft-delete, lease acquisition with `FOR UPDATE SKIP LOCKED`, lease tokens and expiry recovery, retry limits and failure handling, authenticated internal worker APIs, and the Python worker client/loop step. Chunking, embeddings, Qdrant indexing, RAG, and frontend changes were excluded. No additional npm or Python dependencies were installed.
+
+### Database migration & implemented files
+
+- `backend/database/migrations/0018_create_document_ingestion_jobs.sql`: Adds `document_versions_document_id_unique` and creates `document_ingestion_jobs` with composite FKs to `documents` and `document_versions`, status lifecycle (`queued`, `leased`, `completed`, `failed`, `cancelled`), `attempt_count <= max_attempts`, lease state constraints (`lease_token`, `leased_by`, `leased_at`, `lease_expires_at`), `completed_at` constraint, and partial unique index `document_ingestion_jobs_one_active_per_version_idx` preventing duplicate active jobs per version.
+- `backend/src/integrations/ai/ai-auth.ts` & `backend/src/middlewares/internal-auth.ts`: Added `verifyInternalWorkerToken()` and `requireInternalWorkerAuth('ingestion:worker')` verifying short-lived HS256 JWTs minted by the Python worker (`iss: onussync-ai-backend`, `aud: onussync-backend`, `sub: service:ai-worker`).
+- `backend/src/modules/ingestion-jobs/`:
+  - `ingestion-jobs.types.ts`, `ingestion-jobs.validation.ts`, `ingestion-jobs.repository.ts`, `ingestion-jobs.controller.ts`, `ingestion-jobs.routes.ts`: Mounted at `/api/v1/internal/ingestion-jobs` (`POST /lease`, `POST /:jobId/complete`, `POST /:jobId/fail`). Uses `FOR UPDATE SKIP LOCKED` to prevent duplicate concurrent leases, reclaims expired leases, enforces `leaseToken` and tenant/version scope on callbacks, re-queues retryable failures up to `max_attempts`, marks exhausted/non-retryable jobs and their document versions `failed`, and **never** marks documents/versions `ready` or `indexed_at` on job completion.
+  - `backend/src/modules/documents/documents.repository.ts`, `documents.service.ts`, `documents.controller.ts`, `documents.routes.ts`: Automatically enqueues jobs on upload, version replacement, and staff retry; cancels active jobs on supersede/soft-delete; exposes read-only `GET /api/v1/businesses/:businessId/documents/:documentId/jobs` (omitting `leaseToken`) for `owner` and `operator`.
+- `ai-backend/app/`:
+  - `core/config.py` & `ai-backend/.env.example`: Added validated `AI_BACKEND_SERVICE_URL` and `AI_BACKEND_REQUEST_TIMEOUT_MS`.
+  - `core/internal_auth.py`: Added `sign_worker_service_token()`.
+  - `modules/ingestion/` (`schemas.py`, `client.py`, `worker.py`): Added `BackendIngestionClient` (using installed `httpx2.AsyncClient`) and `process_next_ingestion_job()` with SHA-256 content integrity verification and `complete`/`fail` reporting.
+- Tests: `backend/tests/ingestion-jobs.unit.test.mjs`, `backend/tests/ingestion-jobs.integration.test.mjs`, `backend/tests/migrations.integration.test.mjs`, and `ai-backend/tests/test_ingestion_worker.py`.
+
+### Verification results & limitations
+
+- `cd backend && set -a && . ./.env && set +a && export TEST_DATABASE_URL="$DATABASE_URL" && npm run db:migrate && npm run typecheck && npm test`:
+  - `db:migrate`: Applied `0018_create_document_ingestion_jobs.sql` cleanly; `migrations.integration.test.mjs` verified the complete `0001`–`0018` migration chain against a fresh isolated PostgreSQL schema.
+  - `typecheck` & `build`: Passed with 0 errors.
+  - `npm test`: **143 passed, 0 failed, 0 skipped** (covering concurrent worker leases, expired lease recovery, retry limits, duplicate active job prevention, and internal auth failures).
+- `cd ai-backend && .venv/bin/python -m unittest discover -s tests -v && .venv/bin/python -m compileall -q app tests && .venv/bin/python -m pip check`:
+  - **47 passed, 0 failed** (`compileall` and `pip check` clean).
+- **Limitations**: Job completion in Step `05.02` validates leased text integrity and marks the job `completed` while leaving `document_versions` in `processing` (`indexedAt: null`) until normalization/chunking (`05.03`) and Qdrant vector indexing (`06.01`) are implemented. No standalone background daemon process is started automatically. No Git commit or push was performed. Next proposed step: **Phase `05` — Step `05.03`** (awaiting user approval).
+
+## Versioned text normalization, chunking, source metadata, and processing status (05.03) — verified approved scope
+
+Date: 28 November 2026 (Asia/Kolkata). Implementation: **verified locally**. Learning: **not assessed**.
+
+### Approved scope and dependencies
+
+Implemented only OnusSync Phase `05`, Step `05.03`: Python text normalization and deterministic boundary-aware chunking for TXT and Markdown documents, versioned chunking configuration (`AI_CHUNK_VERSION`, `AI_CHUNK_MAX_CHARS`, `AI_CHUNK_OVERLAP_CHARS`), durable chunk storage owned by Node.js in PostgreSQL, idempotent chunk replacement on job completion/retry, recovery of pre-`05.03` unchunked `completed` jobs, and staff processing-status and chunk-inspection endpoints. Embeddings, Qdrant indexing, RAG retrieval, and frontend changes were excluded. No additional dependencies were installed.
+
+### Database migration & implemented files
+
+- `backend/database/migrations/0019_create_document_chunks.sql`: Extends `document_versions` with `chunk_version`, `chunk_count`, `normalized_char_count`, and `normalized_sha256`; creates `document_chunks` with deterministic `id` (UUIDv5), composite FKs to `documents`, `document_versions`, and `business_locations`, `visibility`, `heading_path`, exact character offsets (`char_start`, `char_end`, `char_count`), `content_sha256`, and `chunk_text`; re-queues any pre-`05.03` `completed` jobs whose `document_versions` remain in `processing` without persisted chunks.
+- `ai-backend/app/`:
+  - `core/config.py` & `ai-backend/.env.example`: Added validated `AI_CHUNK_VERSION` (default `chunk-v1`), `AI_CHUNK_MAX_CHARS` (default `800`), and `AI_CHUNK_OVERLAP_CHARS` (default `120`, strictly `< chunk_max_chars`).
+  - `modules/ingestion/chunker.py`: Implements `normalize_document_text()` (Unicode NFC, BOM strip, `\n` normalization, trailing-space/excess-blank-line cleanup), Markdown ATX `heading_path` extraction (ignoring fenced code blocks), boundary-aware splitting with overlap, and deterministic UUIDv5 `chunk_id` generation.
+  - `modules/ingestion/schemas.py`, `client.py`, `worker.py`: Integrates `chunk_document_text()` into `process_next_ingestion_job()` and sends the validated `chunking` payload to Node.js `POST /api/v1/internal/ingestion-jobs/:jobId/complete`.
+- `backend/src/modules/ingestion-jobs/` & `backend/src/modules/documents/`:
+  - `ingestion-jobs.validation.ts` & `ingestion-jobs.repository.ts`: Strictly validates `chunking` payload (including per-chunk SHA-256 and offset checks) and atomically replaces `document_chunks` and updates `document_versions` chunk metadata inside `completeIngestionJob()` without marking `document_versions` `ready` or setting `indexed_at`.
+  - `documents.repository.ts`, `documents.service.ts`, `documents.controller.ts`, `documents.routes.ts`: Keeps `document_chunks.visibility` and `location_id` synchronized on metadata `PATCH`; exposes `GET /api/v1/businesses/:businessId/documents/:documentId/status` and `GET /api/v1/businesses/:businessId/documents/:documentId/versions/:versionId/chunks` (`owner`, `operator`).
+- Tests: `ai-backend/tests/test_chunker.py`, `ai-backend/tests/test_ingestion_worker.py`, `backend/tests/ingestion-jobs.unit.test.mjs`, `backend/tests/ingestion-jobs.integration.test.mjs`, and `backend/tests/migrations.integration.test.mjs`.
+
+### Verification results & limitations
+
+- `cd ai-backend && .venv/bin/python -m unittest discover -s tests -v && .venv/bin/python -m compileall -q app tests && .venv/bin/python -m pip check`: **51 passed, 0 failed** (`compileall` and `pip check` clean).
+- `cd backend && set -a && . ./.env && set +a && export TEST_DATABASE_URL="$DATABASE_URL" && npm run db:migrate && npm run typecheck && npm test`:
+  - `db:migrate`: Applied `0019_create_document_chunks.sql` cleanly; `migrations.integration.test.mjs` verified the complete `0001`–`0019` migration chain against a fresh isolated PostgreSQL schema.
+  - `typecheck` & `build`: Passed with 0 errors.
+  - `npm test`: **143 passed, 0 failed, 0 skipped**.
+- **Limitations**: Documents remain in `processing` (`activeVersionId: null`, `indexedAt: null`) after chunking until Qdrant embeddings and vector indexing are implemented in Phase `06` (`06.01`). No Git commit or push was performed. Next proposed step: **Phase `06` — Step `06.01`** (awaiting user approval).
+
+## Phase 05 Knowledge Base dashboard UI — verified approved scope
+
+Date: 28 November 2026 (Asia/Kolkata). Implementation: **verified locally (TypeScript, Vite build, ESLint, and unit tests)**.
+
+### Approved scope and implemented files
+
+Implemented the Phase `05` Knowledge Base dashboard UI connected to the completed Phase `05` backend document management, ingestion job, and chunk APIs:
+- `dashboard/src/services/api/client.ts`: Updated `apiRequest()` to support `FormData` bodies alongside JSON while preserving `credentials: 'include'`, CSRF headers, and `ApiClientError` handling.
+- `dashboard/src/components/ui/Icons.tsx` & `dashboard/src/config/routes.ts` & `dashboard/src/App.tsx`: Added `fileText` and `upload` icons, `ROUTES.knowledge` (`/knowledge`) navigation item, and mounted `KnowledgePage`.
+- `dashboard/src/features/knowledge/`:
+  - `types.ts`, `validation.ts`, `api.ts`: Added strict runtime response validation, `KnowledgeApi` client (with owner-only mutation guards, tenant response verification, and CSRF-protected `FormData` uploads), client-side `.txt`/`.md`/`.markdown` + size validation, search/location filtering, and overview metrics calculation.
+  - `components/KnowledgeStatusBadges.tsx`, `components/DocumentUploadCard.tsx`, `components/DocumentDetailPanel.tsx`: Modular UI components for status/visibility/job badges (explicitly distinguishing `uploaded` and `processing` from `ready`), owner-only TXT/Markdown upload, metadata/visibility/location editing, version history and replacement upload, ingestion job status/progress, on-demand source text and chunk inspection, failed ingestion retry, and soft-delete confirmation via `ConfirmDialog`.
+- `dashboard/src/pages/KnowledgePage.tsx` & `dashboard/src/pages/KnowledgePage.css`: Responsive Knowledge Base overview, search/visibility/status/location/deleted filters, document list, and operator read-only / owner management views.
+- `dashboard/tests/knowledge.test.mts`: Added unit tests covering file/title validation, overview metrics, search/location filtering, operator write blocking, `FormData` + CSRF upload requests, and cross-tenant response rejection.
+
+### Verification results & limitations
+
+- `cd dashboard && npm run build`: `tsc -b` and `vite build` passed with 0 errors (`dist/assets/index-*.js` and `dist/assets/index-*.css` built cleanly).
+- `cd dashboard && npm run lint`: `eslint .` passed with 0 errors and 0 warnings.
+- `cd dashboard && npm test`: **50 passed, 0 failed** (including 47 existing Phase 01–04 tests and 3 new Knowledge Base test suites).
+- **Limitations**: Browser-based end-to-end Playwright/Puppeteer tests against a live running Vite + Node.js server were not executed in this step; live API behavior is verified by the backend integration suite (`143 passed`) and dashboard unit/contract tests (`50 passed`). No Git commit or push was performed. Next proposed step: **Phase `06` — Step `06.01`** (awaiting user approval).
+
+## Final Phase 05 integration verification — verified approved scope
+
+Date: 28 November 2026 (Asia/Kolkata).
+
+### Live multi-service verification & confirmed issue fixed
+
+- **Live services exercised together**: Ran PostgreSQL (`127.0.0.1:5433`, isolated schema `onussync_p5_verify`, migrations `0001`–`0020`), `ai-backend` (`uvicorn app.main:app --port 8001`), `backend` (`dist/server.js --port 3001`), `dashboard` (`vite --port 5174` proxying `/api` to `3001`), and the Python ingestion worker (`process_next_ingestion_job()`).
+- **Confirmed Phase 05 bug found & fixed**: Replacing a document version after Step `05.03` chunking completed (`document_versions.status = 'processing'`, `document_ingestion_jobs.status = 'completed'`, no active `'leased'` job) previously failed with `409 DOCUMENT_PROCESSING_IN_PROGRESS` and was blocked by `enforce_document_version_transitions()`. Added `backend/database/migrations/0020_allow_processing_version_supersede.sql` (allowing `'processing' -> 'superseded'`) and updated `addDocumentVersion()` in `backend/src/modules/documents/documents.repository.ts` to block replacement only while an active `'leased'` job exists.
+- **Verified live E2E flow**: Vite SPA serving + `/api/v1/health` + `/api/v1/ai/health`, owner login with `HttpOnly` session + CSRF cookies, `FormData` upload of `clinic-guide.md` (`uploaded`, `activeVersionId: null`, `indexedAt: null`), tenant isolation (`Beta Studio` saw 0 `Alpha Clinic` documents), Python worker leasing/chunking/completing (`chunkCount: 1`, `chunkVersion: chunk-v1`, document still `processing` and `indexedAt: null`), chunk inspection, `v2` replacement upload, metadata `PATCH` (`staff_only`), operator RBAC (`200` read / `403` `PATCH`), and soft-delete (`DELETE`).
+- **Upload size limit consistency**: Verified `DOCUMENT_MAX_BYTES` defaults to `262144` bytes (256 KiB) in `backend/src/config/env.ts` and `backend/.env.example`, matching `KNOWLEDGE_MAX_BYTES = 262_144` in `dashboard/src/features/knowledge/validation.ts` and the UI copy in `DocumentUploadCard.tsx`.
+
+### Regression test results & limitations
+
+- `backend`: `npm run typecheck` clean, `npm test` (with `TEST_DATABASE_URL="$DATABASE_URL"`): **143 passed, 0 failed, 0 skipped** (including `0001`–`0020` migration chain and `v2` replacement-after-chunking coverage).
+- `ai-backend`: `.venv/bin/python -m unittest discover -s tests -v`: **51 passed, 0 failed** (`compileall` and `pip check` clean).
+- `dashboard`: `npm run build` clean, `npm run lint` clean, `npm test`: **50 passed, 0 failed**.
+- **Limitations**: Interactive Chrome DevTools UI clicks could not be executed because Chrome remote debugging (`DevToolsActivePort`) was not running in this environment. Temporary verification schema `onussync_p5_verify` was dropped and all verification daemons were stopped. No Git commit or push was performed. Next proposed step: **Phase `06` — Step `06.01`** (awaiting user approval).

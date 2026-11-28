@@ -3,6 +3,7 @@ import { requireAuth, requireCsrf } from '../../middlewares/auth.js';
 import { requireTenantMembership } from '../../middlewares/tenant.js';
 import { assistantsRouter } from '../assistants/assistants.routes.js';
 import { conversationsRouter } from '../conversations/conversations.routes.js';
+import { documentsRouter } from '../documents/documents.routes.js';
 import {
   handleArchiveBusinessLocation,
   handleCreateBusiness,
@@ -61,3 +62,4 @@ businessesRouter.get(
 
 businessesRouter.use('/:businessId/assistants', assistantsRouter);
 businessesRouter.use('/:businessId/conversations', conversationsRouter);
+businessesRouter.use('/:businessId/documents', documentsRouter);

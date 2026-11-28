@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import re
+import secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from app.modules.respond.schemas import AiDelegationClaims, AiRespondRequest
 logger = logging.getLogger(__name__)
 
 EXPECTED_SERVICE_SUBJECT = "service:backend"
+EXPECTED_WORKER_SUBJECT = "service:ai-worker"
 MAX_TOKEN_LENGTH = 4096
 BASE64URL_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 BEARER_CHALLENGE_HEADERS = {"WWW-Authenticate": "Bearer"}
@@ -250,3 +252,47 @@ def require_internal_service_auth(
         )
 
     return dependency
+
+
+def _encode_base64url_json(value: dict[str, Any]) -> str:
+    raw = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def sign_worker_service_token(
+    settings: Settings,
+    *,
+    scope: str = "ingestion:worker",
+    ttl_seconds: int = 60,
+    now_seconds: int | None = None,
+    token_id: str | None = None,
+) -> str:
+    """Sign a short-lived HS256 JWT for Python-to-Node.js internal worker callbacks."""
+    if not scope.strip():
+        raise ValueError("Worker token scope must not be empty.")
+    if ttl_seconds < 1 or ttl_seconds > settings.internal_auth_max_ttl_seconds:
+        raise ValueError("Worker token TTL is out of allowed bounds.")
+
+    issued_at = int(time.time()) if now_seconds is None else now_seconds
+    header_b64 = _encode_base64url_json({"alg": "HS256", "typ": "JWT"})
+    payload_b64 = _encode_base64url_json(
+        {
+            "iss": settings.internal_auth_audience,
+            "aud": settings.internal_auth_issuer,
+            "sub": EXPECTED_WORKER_SUBJECT,
+            "iat": issued_at,
+            "exp": issued_at + ttl_seconds,
+            "jti": token_id or secrets.token_urlsafe(16),
+            "scope": scope.strip(),
+        }
+    )
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+    secret_bytes = settings.internal_auth_secret.get_secret_value().encode("utf-8")
+    signature_b64 = (
+        base64.urlsafe_b64encode(
+            hmac.new(secret_bytes, signing_input, hashlib.sha256).digest()
+        )
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+    return f"{header_b64}.{payload_b64}.{signature_b64}"

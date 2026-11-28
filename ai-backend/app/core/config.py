@@ -3,6 +3,7 @@
 import re
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +41,15 @@ class Settings(BaseSettings):
     internal_auth_clock_skew_seconds: int = Field(default=0, ge=0, le=60)
     internal_max_request_bytes: int = Field(default=262_144, ge=1024, le=1_048_576)
     internal_max_deadline_ms: int = Field(default=60_000, ge=100, le=300_000)
+
+    backend_service_url: str = Field(
+        default="http://127.0.0.1:3000", min_length=1, max_length=300
+    )
+    backend_request_timeout_ms: int = Field(default=5000, ge=100, le=60_000)
+
+    chunk_version: str = Field(default="chunk-v1", min_length=1, max_length=64)
+    chunk_max_chars: int = Field(default=800, ge=100, le=4000)
+    chunk_overlap_chars: int = Field(default=120, ge=0, le=1000)
 
     generation_mode: Literal["gemini", "mock"] = "gemini"
     gemini_api_key: SecretStr | None = None
@@ -79,6 +89,25 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("backend_service_url")
+    @classmethod
+    def validate_backend_service_url(cls, value: str) -> str:
+        """Accept only HTTP(S) origins without credentials, paths, queries, or fragments."""
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "AI_BACKEND_SERVICE_URL must be an HTTP(S) origin without credentials, paths, queries, or fragments."
+            )
+        return f"{parsed.scheme}://{parsed.netloc}"
+
     @field_validator("gemini_model")
     @classmethod
     def validate_gemini_model(cls, value: str) -> str:
@@ -88,6 +117,25 @@ class Settings(BaseSettings):
                 "AI_GEMINI_MODEL must contain only letters, digits, dots, underscores, or hyphens."
             )
         return value
+
+    @field_validator("chunk_version")
+    @classmethod
+    def validate_chunk_version(cls, value: str) -> str:
+        """Accept only safe chunker version identifiers."""
+        if not MODEL_NAME_PATTERN.match(value):
+            raise ValueError(
+                "AI_CHUNK_VERSION must contain only letters, digits, dots, underscores, or hyphens."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_chunk_overlap_bounds(self) -> "Settings":
+        """Ensure chunk overlap is strictly smaller than chunk max size."""
+        if self.chunk_overlap_chars >= self.chunk_max_chars:
+            raise ValueError(
+                "AI_CHUNK_OVERLAP_CHARS must be smaller than AI_CHUNK_MAX_CHARS."
+            )
+        return self
 
     @model_validator(mode="after")
     def require_gemini_key_in_gemini_mode(self) -> "Settings":

@@ -1,5 +1,6 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { env } from '../../config/env.js';
+import { HttpError } from '../../utils/http-error.js';
 import { validateAiDelegationClaims, type AiDelegationClaims } from './ai-contract.js';
 
 const SERVICE_SUBJECT = 'service:backend';
@@ -105,4 +106,131 @@ export function createInternalServiceToken(
     scope,
     delegation: options?.delegation,
   });
+}
+
+const MAX_WORKER_TOKEN_LENGTH = 4096;
+const BASE64URL_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
+const EXPECTED_WORKER_SUBJECT = 'service:ai-worker';
+
+export interface VerifiedWorkerTokenContext {
+  issuer: string;
+  audience: string;
+  subject: string;
+  tokenId: string;
+  scopes: ReadonlySet<string>;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+function decodeCanonicalBase64Url(segment: string): Buffer {
+  if (!segment || !BASE64URL_SEGMENT_PATTERN.test(segment)) {
+    throw new Error('Invalid base64url segment.');
+  }
+
+  const decoded = Buffer.from(segment, 'base64url');
+  if (decoded.toString('base64url') !== segment) {
+    throw new Error('Non-canonical base64url encoding.');
+  }
+
+  return decoded;
+}
+
+function decodeJwtJsonObject(segment: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(decodeCanonicalBase64Url(segment).toString('utf8'));
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('JWT segment must be a JSON object.');
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * Verify a short-lived HS256 JWT minted by the Python AI worker for internal
+ * callbacks to the Node.js backend.
+ */
+export function verifyInternalWorkerToken(
+  token: string,
+  requiredScope: string,
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): VerifiedWorkerTokenContext {
+  if (!token || token.length > MAX_WORKER_TOKEN_LENGTH) {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Invalid internal service token.');
+  }
+
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts.some((part) => !part)) {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Invalid internal service token.');
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts as [string, string, string];
+
+  let header: Record<string, unknown>;
+  let actualSignature: Buffer;
+
+  try {
+    header = decodeJwtJsonObject(headerB64);
+    actualSignature = decodeCanonicalBase64Url(signatureB64);
+  } catch {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Invalid internal service token.');
+  }
+
+  if (header.alg !== 'HS256' || header.typ !== 'JWT') {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Invalid internal service token.');
+  }
+
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const expectedSignature = createHmac('sha256', env.aiInternalAuthSecret)
+    .update(signingInput, 'ascii')
+    .digest();
+
+  if (
+    actualSignature.length !== expectedSignature.length ||
+    !timingSafeEqual(actualSignature, expectedSignature)
+  ) {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Invalid internal service token.');
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = decodeJwtJsonObject(payloadB64);
+  } catch {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Invalid internal service token.');
+  }
+
+  const { iss, aud, sub, jti, scope, iat, exp } = payload;
+
+  if (
+    iss !== env.aiInternalAuthAudience ||
+    aud !== env.aiInternalAuthIssuer ||
+    sub !== EXPECTED_WORKER_SUBJECT ||
+    typeof jti !== 'string' ||
+    !jti.trim() ||
+    typeof scope !== 'string' ||
+    !scope.trim() ||
+    typeof iat !== 'number' ||
+    !Number.isInteger(iat) ||
+    typeof exp !== 'number' ||
+    !Number.isInteger(exp)
+  ) {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Invalid internal service token.');
+  }
+
+  if (exp <= nowSeconds || iat > nowSeconds || exp <= iat || exp - iat > 300) {
+    throw new HttpError(401, 'INTERNAL_AUTH_REQUIRED', 'Internal service token is expired or invalid.');
+  }
+
+  const scopes = new Set(scope.split(/\s+/).filter(Boolean));
+  if (!scopes.has(requiredScope)) {
+    throw new HttpError(403, 'INTERNAL_AUTH_FORBIDDEN', 'Internal service token lacks required scope.');
+  }
+
+  return {
+    issuer: iss,
+    audience: aud,
+    subject: sub,
+    tokenId: jti,
+    scopes,
+    issuedAt: iat,
+    expiresAt: exp,
+  };
 }

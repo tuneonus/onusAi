@@ -15,6 +15,7 @@ import { LoginPage } from './pages/LoginPage';
 import { ModulePlaceholderPage } from './pages/ModulePlaceholderPage';
 import { AssistantsPage } from './pages/AssistantsPage';
 import { ConversationsPage } from './pages/ConversationsPage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { StaffPage } from './pages/StaffPage';
 
 function DashboardRoutes() {
@@ -93,6 +94,8 @@ function DashboardRoutes() {
         <Route path={ROUTES.conversations} element={<AppShell branding={system.branding} themePreference={preference} onSelectTheme={setPreference} pageTitle="Conversations"><ConversationsPage /></AppShell>} />
 
         <Route path={ROUTES.assistants} element={<AppShell branding={system.branding} themePreference={preference} onSelectTheme={setPreference} pageTitle="AI Assistants"><AssistantsPage /></AppShell>} />
+
+        <Route path={ROUTES.knowledge} element={<AppShell branding={system.branding} themePreference={preference} onSelectTheme={setPreference} pageTitle="Knowledge Base"><KnowledgePage /></AppShell>} />
 
         <Route
           path={ROUTES.staff}
